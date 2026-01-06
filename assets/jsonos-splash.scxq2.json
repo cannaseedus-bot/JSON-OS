@@ -1,0 +1,9 @@
+{
+  "@type": "scxq2.asset.pack.v1",
+  "@asset_id": "asset://jsonos/splash/svg",
+  "@encoding": "scxq2",
+  "@source_mime": "image/svg+xml",
+  "@decode_required": true,
+  "@dict_ref": "asx://scxq2/dict/brand_assets.v1",
+  "@payload_scxq2": "⟁SCXQ2⟁DICT⟁brand_assets.v1⟁FIELD⟁svg⟁BLOB⟁<packed-bytes>"
+}

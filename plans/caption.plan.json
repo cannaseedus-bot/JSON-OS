@@ -1,0 +1,11 @@
+{
+  "@type": "image.plan.v1",
+  "@bounds": { "@max_steps": 12, "@max_bytes": 2097152, "@max_pixels": 1048576, "@max_tokens": 64 },
+  "@steps": [
+    { "@op": "idb.kql", "@into": "imgref", "@kql": "⟁LOAD⟁ image_assets ⟁WHERE⟁ id = \"img_001\" ⟁LIMIT⟁ 1" },
+    { "@op": "img.fetch", "@into": "bytes", "@ref_from": "imgref", "@field": "blob_ref" },
+    { "@op": "img.decode", "@into": "tensor", "@from": "bytes", "@format": "auto" },
+    { "@op": "vision.run", "@into": "y", "@task": "caption", "@model_ref": { "@family": "janus", "@id": "janus_asx_v1" } },
+    { "@op": "return", "@from": "y" }
+  ]
+}

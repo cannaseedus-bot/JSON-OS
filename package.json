@@ -1,0 +1,10 @@
+{
+  "name": "json-os",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "JSON-OS / ASX-R reference artifacts and parity harness",
+  "scripts": {
+    "test": "node tests/run.shared.test.js"
+  },
+  "license": "MIT"
+}

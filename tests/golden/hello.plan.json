@@ -1,0 +1,10 @@
+{
+  "@type": "inference.plan.v1",
+  "@bounds": { "@max_steps": 8, "@max_tokens": 64, "@max_bytes": 65536 },
+  "@steps": [
+    { "@op": "sys.set", "@text": "You are PRIME." },
+    { "@op": "input.user", "@into": "prompt" },
+    { "@op": "chat.run", "@into": "ans", "@max_tokens": 8, "@temperature": 0.0 },
+    { "@op": "return", "@from": "ans" }
+  ]
+}

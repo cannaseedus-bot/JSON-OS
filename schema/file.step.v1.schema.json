@@ -1,0 +1,22 @@
+{
+  "$id": "asx://schema/file.step.v1",
+  "$comment": "File op step v1 (FROZEN). Only allowlisted ops; deterministic ordering and bounds.",
+  "type": "object",
+  "required": ["@op", "@ref"],
+  "properties": {
+    "@op": {
+      "type": "string",
+      "enum": ["file.read", "file.write", "file.stat", "file.list", "file.hash"]
+    },
+    "@ref": { "$ref": "asx://schema/file.plan.v1#/$defs/ref" },
+    "@into": { "type": "string" },
+    "@from": { "type": "string" },
+    "@encoding": {
+      "type": "string",
+      "enum": ["utf8", "binary"]
+    },
+    "@max_bytes": { "type": "integer", "minimum": 1, "maximum": 16777216 },
+    "@pattern": { "type": "string" }
+  },
+  "additionalProperties": false
+}

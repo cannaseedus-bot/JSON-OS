@@ -1,0 +1,36 @@
+{
+  "$id": "asx://schema/file.result.v1",
+  "$comment": "File Plane execution result v1 (FROZEN). Hashes bind proofs.",
+  "type": "object",
+  "required": ["@type", "@ok", "@ops", "@context_hash"],
+  "properties": {
+    "@type": { "const": "file.result.v1" },
+    "@ok": { "type": "boolean" },
+    "@ops": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["@op", "@ref", "@hash"],
+        "properties": {
+          "@op": { "type": "string" },
+          "@ref": { "type": "string" },
+          "@hash": { "type": "string", "minLength": 64, "maxLength": 64 },
+          "@bytes": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "@context_hash": { "type": "string", "minLength": 64, "maxLength": 64 },
+    "@error": {
+      "type": "object",
+      "required": ["@type", "@stage", "@message"],
+      "properties": {
+        "@type": { "type": "string" },
+        "@stage": { "type": "string" },
+        "@message": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,15 @@
+{
+  "hello.plan.json": {
+    "plan_hash": "a46da04ffc44a17fb0e8b953e451eed25ce343c35a78f8482d5e6aad52d3b12a",
+    "context_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "model_hash": "37a18e8215daa4c9f0d1769ae1708eff880fda8c64e76d8936baafdb03a5045f",
+    "output_hash": "a82a918460103287849fa399ae6920f4f74903e24336c8d4be5a20826c2a5ccf"
+  },
+  "caption.plan.json": {
+    "image_hash": "5e563654db6bb7e1e1801cad645af6ea3e8afe07e492286275b6e6717199c2f8",
+    "plan_hash": "6dd293bb22fdbf3eecaf02e625c37a098fb73e2b19f5fa09dffa27689981b077",
+    "model_hash": "b5c616206df08a11be8b9ae6d97e7eac7231774a45585c09ceb6b32bd7478adb",
+    "output_hash": "596d36534d9441d298bd4c6bb3b0f15e06cf7c4c2794b5f3d4f9cc7832f2ce72",
+    "context_hash": "918691d86adcb218591ff6f2a8753c066e5a87423cfd2e03bf510dda8dcd2fe1"
+  }
+}

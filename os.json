@@ -1,0 +1,34 @@
+{
+  "@atomic_exec": {
+    "@id": "asx://atomic_exec/%7C%E2%9A%9B%7C.v1",
+    "@name": "|⚛|",
+    "@status": "FROZEN",
+    "@role": "atomic-execution-language",
+    "@invariant": "Single-face execution surface; all subsystems are routed through |⚛| steps; no parallel authority.",
+    "@io": {
+      "@stdin": true,
+      "@stdout": true,
+      "@utf8_preferred": true,
+      "@ascii_fallback": true,
+      "@ansi_color_optional": true
+    },
+    "@pipeline": [
+      { "@op": "|⚛|.accept", "@from": "user_submit_prompt" },
+      { "@op": "|⚛|.algebra", "@tag": "@algebraic_question" },
+      { "@op": "|⚛|.geometry", "@tag": "@geo-metric_control" },
+      { "@op": "|⚛|.cc", "@tag": "@compression_calculus" },
+      { "@op": "|⚛|.pi", "@tag": "@pi_matrix" },
+      { "@op": "|⚛|.tokenize", "@tag": "response_tokenized" },
+      { "@op": "|⚛|.emit", "@to": "stdout" }
+    ],
+    "@allowlist_ops": [
+      "|⚛|.accept",
+      "|⚛|.algebra",
+      "|⚛|.geometry",
+      "|⚛|.cc",
+      "|⚛|.pi",
+      "|⚛|.tokenize",
+      "|⚛|.emit"
+    ]
+  }
+}

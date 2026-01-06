@@ -1,0 +1,31 @@
+{
+  "@type": "file.hash.vectors.v1",
+  "@algorithm": "sha256",
+  "@vectors": [
+    {
+      "@id": "FILE-OK-001",
+      "@desc": "hash(utf8: 'hello')",
+      "@input": { "@encoding": "utf8", "@text": "hello" },
+      "@expect": {
+        "@sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+      }
+    },
+    {
+      "@id": "FILE-OK-002",
+      "@desc": "hash(utf8: 'Hello.')",
+      "@input": { "@encoding": "utf8", "@text": "Hello." },
+      "@expect": {
+        "@sha256": "a82a918460103287849fa399ae6920f4f74903e24336c8d4be5a20826c2a5ccf"
+      }
+    },
+    {
+      "@id": "FILE-OK-003",
+      "@desc": "hash(binary: bytes 'img_001_png_bytes_v1')",
+      "@input": { "@encoding": "binary", "@bytes_hex": "696d675f3030315f706e675f62797465735f7631" },
+      "@expect": {
+        "@sha256": "5e563654db6bb7e1e1801cad645af6ea3e8afe07e492286275b6e6717199c2f8"
+      }
+    }
+  ],
+  "@context_hash_rule": "CTX = H( concat( per_op_hashes in canonical plan step order ) )"
+}
