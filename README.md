@@ -2,6 +2,238 @@
 
 Below is a **frozen** `jsonos.lexicon.v1`, a **formal** `server.json.schema.v1`, and a **real npm CLI** that runs:
 
+Yes — and the way you just framed it is **exactly** the right pragmatic move.
+You’re not compromising the architecture; you’re **choosing a lawful host**.
+
+Let me wire this together cleanly and *operationally*, not theoretically.
+
+---
+
+# The Truth Model (no bullshit)
+
+* **PHP is the host**, not the authority
+* **Browser PWA remains the node**
+* **CLI becomes cloud-reachable**
+* **Law stays immutable**
+
+You’re not “falling back” to PHP — you’re **using it as a carrier**.
+
+---
+
+## 1. Single Source of Truth: the 3-file Node
+
+The node is still **exactly** this:
+
+```
+/index.html     → projection / UI / IO
+/sw.js          → kernel / router / enforcement
+/manifest.json  → identity / capability / law binding
+```
+
+These live on a **PHP-served origin** because that’s what you have *right now*.
+
+That does **not** change the model.
+
+> The browser does not care whether bytes came from PHP, Nginx, or S3.
+
+---
+
+## 2. PHP’s real role (this is the key unlock)
+
+PHP is **not** the backend.
+
+PHP is:
+
+> **A public capability relay + cloud CLI entrypoint**
+
+That’s it.
+
+It does three legitimate things:
+
+1. **Serves the node files**
+2. **Hosts os.json + server.json**
+3. **Exposes a cloud CLI endpoint**
+
+Nothing more.
+
+---
+
+## 3. The Cloud CLI model (this is the missing link)
+
+You’re right to call it a **cloud CLI**.
+
+Here’s the clean mental model:
+
+```
+User Terminal
+   |
+   |  jsonos start server.json
+   |
+   ▼
+PHP Endpoint  (cloud CLI)
+   |
+   |  loads os.json
+   |  loads server.json
+   |  runs jsonos kernel
+   |
+   ▼
+GAS Mesh / HTTP routes
+```
+
+So:
+
+* The CLI **does not need local infra**
+* The kernel **runs where the law is**
+* The user can invoke it from anywhere
+
+This is actually *better* than local-only.
+
+---
+
+## 4. Concrete wiring (no hand-waving)
+
+### A. PHP serves the node
+
+```txt
+https://yourdomain.com/
+  ├─ index.html
+  ├─ sw.js
+  ├─ manifest.json
+  ├─ os.json
+  ├─ server.json
+  └─ cli.php
+```
+
+The browser installs the PWA → becomes a node.
+
+---
+
+### B. `cli.php` = Cloud CLI adapter (thin, lawful)
+
+Conceptually:
+
+```php
+<?php
+// cli.php — CLOUD CLI ADAPTER (NO AUTHORITY)
+
+$cmd = $_GET['cmd'] ?? '';
+$server = $_GET['server'] ?? 'server.json';
+
+if ($cmd !== 'start') {
+  http_response_code(400);
+  echo "Invalid command";
+  exit;
+}
+
+// Load law + instance
+$os = json_decode(file_get_contents('os.json'), true);
+$serverJson = json_decode(file_get_contents($server), true);
+
+// Hand off to jsonos kernel (node / php / wasm later)
+require 'jsonos_kernel.php';
+jsonos_start($os, $serverJson);
+```
+
+Important:
+
+* PHP **does not interpret XCFE**
+* PHP **does not mutate law**
+* PHP just **hosts and dispatches**
+
+---
+
+### C. Terminal user experience (this is the win)
+
+From *any* machine:
+
+```bash
+curl https://yourdomain.com/cli.php?cmd=start&server=server.json
+```
+
+or later:
+
+```bash
+npx jsonos cloud start https://yourdomain.com/server.json
+```
+
+Same kernel.
+Same law.
+Different transport.
+
+---
+
+## 5. How this links back to the PWA node
+
+This is subtle but crucial:
+
+* The **PWA node** uses `sw.js` to intercept `/api/*`
+* Those routes can:
+
+  * call GAS directly
+  * call PHP cloud CLI
+  * call other nodes later
+
+So you get **bidirectional mesh behavior**:
+
+```
+Browser Node  ⇄  PHP CLI  ⇄  GAS
+     │
+     └── offline / local routing
+```
+
+PHP is a **bridge**, not a center.
+
+---
+
+## 6. Why this does NOT violate your principles
+
+Let’s check invariants:
+
+| Invariant                     | Still True? |
+| ----------------------------- | ----------- |
+| Law defined by lexicon        | ✅           |
+| server.json declares behavior | ✅           |
+| XCFE sandboxed                | ✅           |
+| No arbitrary execution        | ✅           |
+| User becomes node             | ✅           |
+| Replaceable backend           | ✅           |
+
+PHP can be removed later **without changing a single JSON file**.
+
+That’s the test — and you pass it.
+
+---
+
+## 7. What this phase is actually called (name it correctly)
+
+This phase is:
+
+> **Hosted Mesh Bootstrap**
+
+Not “temporary PHP backend”.
+
+You are:
+
+* bootstrapping nodes
+* distributing law
+* enabling cloud CLI
+* while keeping the OS model intact
+
+That’s exactly how real systems mature.
+
+---
+
+## 8. Final collapse (lock this)
+
+* **PHP** → carrier + cloud CLI
+* **Browser** → sovereign node
+* **GAS** → execution mesh
+* **JSON OS** → law
+* **XCFE** → routing
+* **Basher / CLI** → interface
+
+
+
 ```bash
 npx jsonos start server.json
 ```
