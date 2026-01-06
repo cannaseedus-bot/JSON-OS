@@ -1,5 +1,1660 @@
 # JSON-OS
 
+Yep. Slot it in as **one more ASX-R subsystem**: **Inference Plane v1**.
+
+### ASX-R Inference Plane v1 (Python-like, deterministic)
+
+**Role:** Pure function from `(prompt, context, policy)` → `(answer, trace, proof)`
+**Law:** inference is **phase-gated** and **replay-verifiable** like KQL/IDB.
+
+#### 1) New blocks (minimal)
+
+* `inference.request.v1`
+* `inference.plan.v1`
+* `inference.step.v1` (optional trace)
+* `inference.result.v1`
+* `inference.proof.v1`
+
+#### 2) Where it runs (XCFE phase binding)
+
+* `@Pop` accept prompt + options
+* `@Wo` compile “python-like chat script” → **Inference Plan**
+* `@Sek` execute steps (bounded)
+* `@Collapse` emit result + proof hash
+
+#### 3) “Python-like” surface syntax (tiny)
+
+You don’t need full Python. You need a **Python-shaped DSL** that lowers deterministically:
+
+Example script:
+
+```py
+sys("You are PRIME.")
+ctx = idb.kql("⟁LOAD⟁ EVENTS \"chat\" ⟁LIMIT⟁ 25")
+prompt = user()
+ans = chat(prompt, ctx, max_tokens=256, temperature=0.2)
+return ans
+```
+
+#### 4) Deterministic lowering (the real spec)
+
+That script lowers to a plan like:
+
+```json
+{
+  "@type": "inference.plan.v1",
+  "@steps": [
+    {"@op":"sys.set", "@text":"You are PRIME."},
+    {"@op":"idb.kql", "@into":"ctx", "@kql":"⟁LOAD⟁ ⟁EVENTS⟁ \"chat\" ⟁LIMIT⟁ 25"},
+    {"@op":"input.user", "@into":"prompt"},
+    {"@op":"chat.run", "@into":"ans", "@max_tokens":256, "@temperature":0.2},
+    {"@op":"return", "@from":"ans"}
+  ],
+  "@bounds": {"@max_steps": 64, "@max_bytes": 1048576}
+}
+```
+
+#### 5) Chat runtime hook (one entrypoint)
+
+Your kernel exposes **one** op target:
+
+* `chat.run` → calls your model runner (MX2LM/Qwen/etc.) through the ASX-R lawful executor.
+* It must output:
+
+  * `@text`
+  * `@tokens_used`
+  * optional `@trace` (if enabled)
+  * `@proof_hash`
+
+#### 6) Proof rule (must match your ASX-R law)
+
+Proof hash covers:
+
+* normalized prompt
+* normalized ctx snapshot hash (IDB commit hash or query result hash)
+* plan hash
+* model id/version hash
+* output text hash
+
+---
+
+
+.
+
+---
+
+# **ASX-R — Inference Plane v1**
+
+**Status:** Frozen
+**Layer:** ASX-R (authoritative runtime)
+**Surface:** Python-like (lowered)
+**Law:** Deterministic, phase-gated, replay-verifiable
+
+---
+
+## **10. Inference Plane v1**
+
+### **10.1 Purpose**
+
+The **Inference Plane** defines how conversational / chat inference executes inside **ASX-R** as a **lawful runtime fold**, not as free-form code execution.
+
+Inference is treated as:
+
+* **Pure** (no hidden side effects)
+* **Bounded** (steps, tokens, bytes)
+* **Replay-verifiable** (proof hash)
+* **Phase-gated** (XCFE-compliant)
+
+This plane enables **Python-like chat scripts** while preserving ASX-R determinism.
+
+---
+
+## **10.2 Position in the ASX Stack**
+
+```
+ASX
+ └─ ASX-R (authoritative runtime)
+     ├─ XCFE (control law)
+     ├─ XJSON (surface syntax)
+     ├─ SCXQ2 (compression algebra)
+     ├─ IDB-API + KQL
+     └─ Inference Plane v1   ← (this chapter)
+```
+
+The Inference Plane **does not replace** KQL or IDB-API.
+It **consumes** them.
+
+---
+
+## **10.3 XCFE Phase Binding**
+
+| Phase       | Role                                        |
+| ----------- | ------------------------------------------- |
+| `@Pop`      | Accept prompt + options                     |
+| `@Wo`       | Compile Python-like script → inference plan |
+| `@Sek`      | Execute plan steps (bounded)                |
+| `@Collapse` | Emit result + proof                         |
+
+Inference **MUST NOT** execute outside these phases.
+
+---
+
+## **10.4 Python-Like Surface (Non-Authoritative)**
+
+The user-visible syntax is **Python-shaped**, but **not Python**.
+
+Example:
+
+```py
+sys("You are PRIME.")
+ctx = idb.kql("⟁LOAD⟁ ⟁EVENTS⟁ \"chat\" ⟁LIMIT⟁ 25")
+prompt = user()
+ans = chat(prompt, ctx, max_tokens=256, temperature=0.2)
+return ans
+```
+
+### **Rule**
+
+This surface **never executes directly**.
+It **must lower** into an **Inference Plan AST**.
+
+---
+
+## **10.5 Inference Plan (Authoritative Form)**
+
+All inference is executed from a **plan**, not raw text.
+
+Example:
+
+```json
+{
+  "@type": "inference.plan.v1",
+  "@steps": [
+    { "@op": "sys.set", "@text": "You are PRIME." },
+    { "@op": "idb.kql", "@into": "ctx", "@kql": "⟁LOAD⟁ ⟁EVENTS⟁ \"chat\" ⟁LIMIT⟁ 25" },
+    { "@op": "input.user", "@into": "prompt" },
+    {
+      "@op": "chat.run",
+      "@into": "ans",
+      "@max_tokens": 256,
+      "@temperature": 0.2
+    },
+    { "@op": "return", "@from": "ans" }
+  ],
+  "@bounds": {
+    "@max_steps": 64,
+    "@max_tokens": 4096,
+    "@max_bytes": 1048576
+  }
+}
+```
+
+---
+
+## **10.6 Execution Law**
+
+1. Plans execute **sequentially**
+2. Steps **must be allow-listed**
+3. Bounds **must be enforced**
+4. Output **must be normalized**
+5. Proof **must be emitted**
+
+No step may:
+
+* spawn threads
+* mutate global runtime
+* access IO outside IDB-API
+* bypass SCXQ2 / XCFE
+
+---
+
+## **10.7 Proof Law**
+
+Every inference emits a **proof block** binding:
+
+* normalized prompt
+* context hash (IDB/KQL result hash)
+* inference plan hash
+* model identifier hash
+* output hash
+
+Inference **without proof is invalid** under ASX-R.
+
+---
+
+## **10.8 Required Block Types**
+
+The Inference Plane introduces **five frozen blocks**:
+
+| Block                  | Role                |
+| ---------------------- | ------------------- |
+| `inference.request.v1` | Entry envelope      |
+| `inference.plan.v1`    | Executable plan     |
+| `inference.step.v1`    | Optional trace      |
+| `inference.result.v1`  | Final output        |
+| `inference.proof.v1`   | Replay verification |
+
+---
+
+# **Frozen JSON Schemas**
+
+All schemas use **ASX canonical headers**.
+No external `$schema` URLs are permitted.
+
+---
+
+## **1. inference.request.v1.schema.json**
+
+```json
+{
+  "$id": "asx://schema/inference.request.v1",
+  "$comment": "ASX-R Inference Request Envelope (Frozen)",
+  "type": "object",
+  "required": ["@type", "@prompt"],
+  "properties": {
+    "@type": { "const": "inference.request.v1" },
+    "@prompt": { "type": "string" },
+    "@options": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+---
+
+## **2. inference.plan.v1.schema.json**
+
+```json
+{
+  "$id": "asx://schema/inference.plan.v1",
+  "$comment": "ASX-R Inference Plan (Authoritative, Frozen)",
+  "type": "object",
+  "required": ["@type", "@steps", "@bounds"],
+  "properties": {
+    "@type": { "const": "inference.plan.v1" },
+    "@steps": {
+      "type": "array",
+      "items": { "$ref": "asx://schema/inference.step.v1" }
+    },
+    "@bounds": {
+      "type": "object",
+      "required": ["@max_steps"],
+      "properties": {
+        "@max_steps": { "type": "integer", "minimum": 1 },
+        "@max_tokens": { "type": "integer", "minimum": 1 },
+        "@max_bytes": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+---
+
+## **3. inference.step.v1.schema.json**
+
+```json
+{
+  "$id": "asx://schema/inference.step.v1",
+  "$comment": "ASX-R Inference Step (Frozen)",
+  "type": "object",
+  "required": ["@op"],
+  "properties": {
+    "@op": { "type": "string" },
+    "@into": { "type": "string" },
+    "@from": { "type": "string" },
+    "@text": { "type": "string" },
+    "@kql": { "type": "string" },
+    "@max_tokens": { "type": "integer" },
+    "@temperature": { "type": "number" }
+  },
+  "additionalProperties": false
+}
+```
+
+---
+
+## **4. inference.result.v1.schema.json**
+
+```json
+{
+  "$id": "asx://schema/inference.result.v1",
+  "$comment": "ASX-R Inference Result (Frozen)",
+  "type": "object",
+  "required": ["@type", "@text"],
+  "properties": {
+    "@type": { "const": "inference.result.v1" },
+    "@text": { "type": "string" },
+    "@tokens_used": { "type": "integer" },
+    "@trace": {
+      "type": "array",
+      "items": { "$ref": "asx://schema/inference.step.v1" }
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+---
+
+## **5. inference.proof.v1.schema.json**
+
+```json
+{
+  "$id": "asx://schema/inference.proof.v1",
+  "$comment": "ASX-R Inference Proof Block (Frozen)",
+  "type": "object",
+  "required": [
+    "@type",
+    "@plan_hash",
+    "@context_hash",
+    "@model_hash",
+    "@output_hash"
+  ],
+  "properties": {
+    "@type": { "const": "inference.proof.v1" },
+    "@plan_hash": { "type": "string" },
+    "@context_hash": { "type": "string" },
+    "@model_hash": { "type": "string" },
+    "@output_hash": { "type": "string" }
+  },
+  "additionalProperties": false
+}
+```
+
+---
+
+## **10.9 Final Invariant**
+
+> **Inference is not free text generation.**
+> **Inference is a replay-verifiable runtime fold.**
+
+---
+
+ 
+
+## 🔗 Formal binding: Inference ↔ IDB-API ↔ KQL (append to **ASX-R_SPEC.md**)
+
+### 10.10 Binding Contract (Normative)
+
+**Inference Plane v1** is *not* allowed to touch storage directly.
+All state/context access MUST traverse:
+
+**Inference → IDB-API → KQL → IDB-API Result → Inference**
+
+#### Binding invariants
+
+1. **Single gateway:** Inference may only call `idb.query.v1` / `idb.txn.v1` blocks (IDB-API).
+2. **Query language:** All query intent MUST be expressed as **KQL** (text) or as a **KQL AST** (optional), and lowered deterministically.
+3. **Result typing:** IDB-API MUST return `idb.query.result.v1` (already frozen in your IDB-API+KQL v1 pillar).
+4. **Hash binding:** `inference.proof.v1.@context_hash` MUST equal the hash of the **normalized** `idb.query.result.v1` payload(s) used by the plan.
+5. **Deterministic lowering:** Any Python-like surface that says `idb.kql("...")` MUST lower to a plan step:
+
+   ```json
+   { "@op":"idb.kql", "@into":"ctx", "@kql":"<kql text>" }
+   ```
+6. **No hidden joins:** Correlation/aggregation belongs to KQL (or IDB-API’s lawful executor of KQL), not to inference runtime code.
+7. **Compression boundary:** If `idb.query.result.v1` returns SCXQ2-packed payloads, decompression MUST be explicit as a plan step (`@op:"scxq2.decode"`) and MUST be reflected in the proof hash chain.
+
+---
+
+### 10.11 Canonical Step Map (Authoritative)
+
+These are the only storage/query-related step ops permitted by Inference Plane v1:
+
+| Step `@op`     | Meaning                  | Bound to         |
+| -------------- | ------------------------ | ---------------- |
+| `idb.kql`      | execute KQL query        | IDB-API executor |
+| `idb.put`      | write records (bounded)  | IDB-API txn      |
+| `idb.del`      | delete records (bounded) | IDB-API txn      |
+| `idb.txn`      | atomic multi-op bundle   | IDB-API txn      |
+| `scxq2.decode` | decode packed result     | SCXQ2 verifier   |
+| `scxq2.encode` | encode outbound payload  | SCXQ2 packer     |
+
+> Anything else is non-conformant.
+
+---
+
+### 10.12 Context Binding Rule (Exact)
+
+Inference context is defined as:
+
+**CTX = concat( hash(idb.query.result.v1[i]) ) in canonical plan order**
+
+Then:
+
+* `inference.proof.v1.@context_hash = H(CTX)`
+* `inference.proof.v1.@plan_hash = H(normalized inference.plan.v1)`
+* `inference.proof.v1.@output_hash = H(normalized inference.result.v1)`
+
+---
+
+### 10.13 Minimal Binding Example
+
+**Plan snippet**
+
+```json
+{
+  "@type":"inference.plan.v1",
+  "@steps":[
+    { "@op":"idb.kql", "@into":"ctx", "@kql":"⟁LOAD⟁ ⟁EVENTS⟁ \"chat\" ⟁LIMIT⟁ 32" },
+    { "@op":"chat.run", "@into":"ans", "@max_tokens":256, "@temperature":0.2 },
+    { "@op":"return", "@from":"ans" }
+  ],
+  "@bounds":{"@max_steps":32,"@max_tokens":1024,"@max_bytes":524288}
+}
+```
+
+**Proof expectation**
+
+* `@context_hash` binds to the returned `idb.query.result.v1` (and any decode steps)
+* `@plan_hash` binds to plan
+* `@output_hash` binds to result
+
+---
+
+## 🧪 ASX-R Conformance Vectors — Inference Plane v1
+
+These are **golden vectors** you can lock into the conformance suite. Each vector is a triple:
+
+1. **Input blocks** (request + plan)
+2. **Expected outcome** (`@ok` or failure)
+3. **Expected failure stage** (if not ok)
+
+### Vector INF-OK-001 — Minimal chat with KQL context
+
+**Input**
+
+* `inference.request.v1` with `@prompt:"hello"`
+* `inference.plan.v1` containing steps: `idb.kql` → `chat.run` → `return`
+* bounds: `@max_steps>=3`, `@max_tokens>=64`
+  **Expected**
+* `inference.result.v1` present
+* `inference.proof.v1` present
+* `@ok=true`
+* proof hashes non-empty strings
+
+---
+
+### Vector INF-FAIL-001 — Storage bypass attempt
+
+**Input**
+
+* plan includes `@op:"idb.raw"` or any op not in allowlist
+  **Expected**
+* `@ok=false`
+* failure stage: `gate.op_allowlist`
+* error: `DisallowedStepOp`
+
+---
+
+### Vector INF-FAIL-002 — Missing proof
+
+**Input**
+
+* plan runs and returns result but does not emit `inference.proof.v1`
+  **Expected**
+* `@ok=false`
+* failure stage: `proof.required`
+* error: `MissingProofBlock`
+
+---
+
+### Vector INF-FAIL-003 — Context hash mismatch
+
+**Input**
+
+* plan uses `idb.kql` result, but proof’s `@context_hash` doesn’t match
+  **Expected**
+* `@ok=false`
+* failure stage: `proof.context_hash`
+* error: `ContextHashMismatch`
+
+---
+
+### Vector INF-FAIL-004 — Bounds exceeded (tokens)
+
+**Input**
+
+* `chat.run` with `@max_tokens` > plan bounds `@max_tokens`
+  **Expected**
+* `@ok=false`
+* failure stage: `bounds.tokens`
+* error: `TokenBudgetExceeded`
+
+---
+
+### Vector INF-FAIL-005 — Bounds exceeded (steps)
+
+**Input**
+
+* plan has `@steps.length > @bounds.@max_steps`
+  **Expected**
+* `@ok=false`
+* failure stage: `bounds.steps`
+* error: `StepBudgetExceeded`
+
+---
+
+### Vector INF-FAIL-006 — Non-deterministic option
+
+**Input**
+
+* `chat.run` with missing `@temperature` AND missing deterministic default
+  **Expected**
+* `@ok=false`
+* failure stage: `normalize.required_defaults`
+* error: `MissingDeterminismDefaults`
+
+*(If you define defaults as deterministic constants, this becomes OK and the test changes accordingly.)*
+
+---
+
+### Vector INF-FAIL-007 — SCXQ2 decode not declared
+
+**Input**
+
+* `idb.kql` returns `@encoding:"scxq2"` but plan lacks `scxq2.decode` step and still uses ctx
+  **Expected**
+* `@ok=false`
+* failure stage: `encoding.decode_required`
+* error: `UndeclaredDecodeStep`
+
+---
+
+## 🧬 Wire into MX2LM / Qwen runtime hooks (ASX-R compliant)
+
+This is the **runtime hook contract**: inference calls a single model adapter, which must behave deterministically and emit proof material.
+
+### 10.14 Model Hook Interface (Normative)
+
+Inference step:
+
+```json
+{ "@op":"chat.run", "@into":"ans", "@max_tokens":256, "@temperature":0.2 }
+```
+
+MUST resolve to:
+
+* `model.chat.v1` invocation (internal hook)
+* using a sealed adapter selected by `@model_ref` (optional) or system default
+
+#### Required adapter outputs
+
+Adapter must return:
+
+* `@text`
+* `@tokens_used` (optional)
+* `@model_hash` (stable identifier hash)
+* `@output_hash` (or raw text so kernel computes it)
+
+### 10.15 Adapter Selection
+
+`chat.run` MAY include:
+
+```json
+"@model_ref": { "@family":"mx2lm" | "qwen", "@id":"..." }
+```
+
+If omitted, default model is chosen deterministically by runtime policy.
+
+### 10.16 Hook Wiring (Implementation Skeleton)
+
+Use these **three hook points** in your kernel/runtime layer:
+
+1. **normalize_plan(plan)**
+
+   * inject deterministic defaults (`@temperature`, etc.)
+   * canonicalize step fields ordering
+
+2. **execute_step(step, env)**
+
+   * `idb.kql` routes to IDB-API executor
+   * `chat.run` routes to Model Adapter
+
+3. **emit_proof(plan, ctx_results, model_meta, output)**
+
+   * compute hashes
+   * output `inference.proof.v1`
+
+### 10.17 MX2LM Adapter (local)
+
+**Contract**
+
+* deterministic sampling (seeded or temperature=0 default)
+* returns stable `@model_hash` (e.g., hash of vocab+weights manifest id)
+
+**Pseudo-hook**
+
+* `mx2lm.chat(prompt, ctx, opts) -> text`
+
+### 10.18 Qwen Adapter (remote or local)
+
+**Contract**
+
+* Qwen inference must be wrapped so that:
+
+  * request payload normalization is deterministic
+  * response normalization is deterministic
+  * `@model_hash` references the exact Qwen-ASX build (your model.safetensors id or manifest hash)
+
+**Pseudo-hook**
+
+* `qwen.chat(prompt, ctx, opts) -> text`
+
+---
+
+## Minimal Hook Policies (you can paste as “allowed ops” law)
+
+**Inference allowlist**
+
+* `sys.set`
+* `idb.kql`
+* `idb.txn`
+* `scxq2.decode`
+* `scxq2.encode`
+* `chat.run`
+* `return`
+
+---
+
+
+
+ **Image inference (Janus-style)** as an **ASX-R Inference Plane extension**, but expressed in **K’UHUL / ASX-R blocks**, with **IDB-API + KQL** as the only data gateway, and **proof-bound replay**.
+
+Below is the **normative** “Image Inference Plane v1” you can drop into **ASX-R_SPEC.md** as a new section.
+
+---
+
+## Image Inference Plane v1 (Janus-style) — ASX-R Extension
+
+### 11.0 Scope
+
+This plane standardizes **vision → structured outputs** (captioning, OCR-lite labels, embeddings, detection summaries, multimodal chat context) using:
+
+**image.inference → IDB-API → KQL → (optional SCXQ2 decode) → vision.run → result + proof**
+
+No direct storage. No ad-hoc JS logic. All behavior is a **plan**.
+
+---
+
+## 11.1 Canonical Step Ops (Allowlist)
+
+These are the only image-plane ops permitted inside `image.plan.v1`:
+
+* `idb.kql` (fetch image refs + prior events + labels)
+* `idb.txn` (optional bounded write-back of derived artifacts)
+* `scxq2.decode` / `scxq2.encode`
+* `img.fetch` (resolve bytes by ref; must be bounded + deterministic)
+* `img.decode` (bytes → pixel tensor; deterministic)
+* `img.preprocess` (resize/normalize/crop; deterministic)
+* `vision.run` (Janus-like model execution)
+* `return`
+
+Anything else ⇒ non-conformant.
+
+---
+
+## 11.2 Input Model: ImageRef (no raw URLs as behavior)
+
+Image data enters by **reference**, not by arbitrary fetch logic.
+
+**Accepted sources** (deterministic):
+
+* `idb://blob/<id>` (IndexedDB blob)
+* `cache://<key>` (SW cache entry)
+* `mesh://...` (only if already resolved by an IDB-API result)
+* `data:` (allowed for tests only, size bounded)
+
+---
+
+## 11.3 Determinism + Proof Binding (Exact)
+
+Define canonical context:
+
+**CTX = hash( normalized `idb.query.result.v1` blocks used )**
+**IMG = hash( normalized image.bytes.v1 OR image.tensor.v1 )**
+
+Then:
+
+* `image.proof.v1.@context_hash = H(CTX)`
+* `image.proof.v1.@image_hash = H(IMG)`
+* `image.proof.v1.@plan_hash = H(normalized image.plan.v1)`
+* `image.proof.v1.@output_hash = H(normalized image.result.v1)`
+
+If `vision.run` uses embeddings or tokens, record:
+
+* `@model_hash` (exact Janus/Qwen-V/vision build id hash)
+* `@prompt_hash` (if prompt present)
+* optional `@seed` policy hash (if you allow seeded stochasticity)
+
+---
+
+## 11.4 Minimal Plan Example (Janus-style caption + embeddings)
+
+```json
+{
+  "@type":"image.plan.v1",
+  "@id":"plan:img:caption:v1",
+  "@bounds":{"@max_steps":24,"@max_bytes":2097152,"@max_pixels":1048576,"@max_tokens":512},
+  "@steps":[
+    { "@op":"idb.kql", "@into":"ctx",
+      "@kql":"⟁LOAD⟁ ⟁EVENTS⟁ \"vision_context\" ⟁LIMIT⟁ 16" },
+
+    { "@op":"idb.kql", "@into":"imgref",
+      "@kql":"⟁LOAD⟁ image_assets ⟁WHERE⟁ id = \"img_001\" ⟁LIMIT⟁ 1" },
+
+    { "@op":"img.fetch", "@into":"bytes",
+      "@ref_from":"imgref", "@field":"blob_ref" },
+
+    { "@op":"img.decode", "@into":"tensor",
+      "@from":"bytes", "@format":"auto" },
+
+    { "@op":"img.preprocess", "@into":"x",
+      "@from":"tensor",
+      "@resize":{"@w":768,"@h":768,"@mode":"fit"},
+      "@normalize":{"@mean":[0.5,0.5,0.5],"@std":[0.5,0.5,0.5]} },
+
+    { "@op":"vision.run", "@into":"y",
+      "@task":"caption+embed",
+      "@model_ref":{"@family":"janus","@id":"janus_asx_v1"},
+      "@input":"x",
+      "@prompt":"Describe the image. Return JSON with caption, tags, safety, and embedding_ref." },
+
+    { "@op":"return", "@from":"y" }
+  ]
+}
+```
+
+---
+
+## 11.5 Storage Binding (Inference ↔ IDB-API ↔ KQL)
+
+**Rule:** all reads/writes MUST be explicit plan steps.
+
+### Read pattern (required)
+
+* `idb.kql` returns `idb.query.result.v1`
+* if result payload is packed ⇒ explicit `scxq2.decode`
+* plan uses decoded values only
+
+### Write-back pattern (optional, bounded)
+
+If you want to persist embeddings/tags:
+
+* `idb.txn` with explicit `put` ops and deterministic keys
+
+Example write-back:
+
+```json
+{ "@op":"idb.txn", "@into":"persist",
+  "@ops":[
+    { "@op":"idb.put", "@store":"vision_embeddings", "@key":"emb:img_001",
+      "@value_from":"y.@embedding" },
+    { "@op":"idb.put", "@store":"vision_labels", "@key":"lbl:img_001",
+      "@value_from":"y.@tags" }
+  ]
+}
+```
+
+---
+
+# ✅ The five JSON Schemas (Image Inference Plane v1)
+
+Below are the **five** schemas you asked for. They’re written in the same “custom header” style you’ve been enforcing (no external `$schema` URL). If you want them as separate files, you can split them 1:1.
+
+> Note: these are intentionally **tight**: allowlist ops, bounded sizes, explicit refs.
+
+---
+
+## 1) `asx://schema/image.inference.request.v1`
+
+```json
+{
+  "$id": "asx://schema/image.inference.request.v1",
+  "title": "Image Inference Request v1",
+  "type": "object",
+  "required": ["@type", "@image_ref"],
+  "properties": {
+    "@type": { "const": "image.inference.request.v1" },
+    "@id": { "type": "string" },
+    "@image_ref": {
+      "type": "object",
+      "required": ["@ref"],
+      "properties": {
+        "@ref": { "type": "string", "minLength": 1 },
+        "@mime": { "type": "string" },
+        "@hint": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "@task": {
+      "type": "string",
+      "enum": ["caption", "embed", "detect", "ocr-lite", "vqa", "caption+embed", "custom"]
+    },
+    "@prompt": { "type": "string" },
+    "@model_ref": {
+      "type": "object",
+      "required": ["@family", "@id"],
+      "properties": {
+        "@family": { "type": "string", "enum": ["janus", "qwen_vl", "mx2lm_vision"] },
+        "@id": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "@bounds": { "$ref": "asx://schema/image.inference.bounds.v1" }
+  },
+  "additionalProperties": false
+}
+```
+
+---
+
+## 2) `asx://schema/image.plan.v1`
+
+```json
+{
+  "$id": "asx://schema/image.plan.v1",
+  "title": "Image Inference Plan v1",
+  "type": "object",
+  "required": ["@type", "@steps", "@bounds"],
+  "properties": {
+    "@type": { "const": "image.plan.v1" },
+    "@id": { "type": "string" },
+    "@bounds": { "$ref": "asx://schema/image.inference.bounds.v1" },
+    "@steps": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": { "$ref": "asx://schema/image.plan.step.v1" }
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+---
+
+## 3) `asx://schema/image.plan.step.v1`
+
+```json
+{
+  "$id": "asx://schema/image.plan.step.v1",
+  "title": "Image Plan Step v1",
+  "type": "object",
+  "required": ["@op"],
+  "properties": {
+    "@op": {
+      "type": "string",
+      "enum": [
+        "idb.kql", "idb.txn",
+        "scxq2.decode", "scxq2.encode",
+        "img.fetch", "img.decode", "img.preprocess",
+        "vision.run",
+        "return"
+      ]
+    },
+    "@into": { "type": "string" },
+    "@from": { "type": "string" },
+
+    "@kql": { "type": "string" },
+
+    "@ops": { "type": "array", "items": { "type": "object" } },
+
+    "@ref_from": { "type": "string" },
+    "@field": { "type": "string" },
+
+    "@format": { "type": "string", "enum": ["auto", "png", "jpeg", "webp"] },
+
+    "@resize": {
+      "type": "object",
+      "properties": {
+        "@w": { "type": "integer", "minimum": 1, "maximum": 8192 },
+        "@h": { "type": "integer", "minimum": 1, "maximum": 8192 },
+        "@mode": { "type": "string", "enum": ["fit", "fill", "crop_center"] }
+      },
+      "required": ["@w", "@h", "@mode"],
+      "additionalProperties": false
+    },
+    "@normalize": {
+      "type": "object",
+      "properties": {
+        "@mean": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+        "@std": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }
+      },
+      "required": ["@mean", "@std"],
+      "additionalProperties": false
+    },
+
+    "@task": {
+      "type": "string",
+      "enum": ["caption", "embed", "detect", "ocr-lite", "vqa", "caption+embed", "custom"]
+    },
+    "@model_ref": {
+      "type": "object",
+      "properties": {
+        "@family": { "type": "string", "enum": ["janus", "qwen_vl", "mx2lm_vision"] },
+        "@id": { "type": "string" }
+      },
+      "required": ["@family", "@id"],
+      "additionalProperties": false
+    },
+    "@input": { "type": "string" },
+    "@prompt": { "type": "string" }
+  },
+  "additionalProperties": false
+}
+```
+
+---
+
+## 4) `asx://schema/image.inference.result.v1`
+
+```json
+{
+  "$id": "asx://schema/image.inference.result.v1",
+  "title": "Image Inference Result v1",
+  "type": "object",
+  "required": ["@type", "@ok"],
+  "properties": {
+    "@type": { "const": "image.inference.result.v1" },
+    "@id": { "type": "string" },
+    "@ok": { "type": "boolean" },
+
+    "@task": { "type": "string" },
+    "@caption": { "type": "string" },
+    "@tags": { "type": "array", "items": { "type": "string" }, "maxItems": 256 },
+
+    "@detections": {
+      "type": "array",
+      "maxItems": 512,
+      "items": {
+        "type": "object",
+        "required": ["@label", "@score", "@box"],
+        "properties": {
+          "@label": { "type": "string" },
+          "@score": { "type": "number", "minimum": 0, "maximum": 1 },
+          "@box": {
+            "type": "object",
+            "required": ["@x", "@y", "@w", "@h"],
+            "properties": {
+              "@x": { "type": "number", "minimum": 0 },
+              "@y": { "type": "number", "minimum": 0 },
+              "@w": { "type": "number", "minimum": 0 },
+              "@h": { "type": "number", "minimum": 0 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "@embedding": {
+      "type": "object",
+      "properties": {
+        "@ref": { "type": "string" },
+        "@dim": { "type": "integer", "minimum": 1, "maximum": 65536 }
+      },
+      "required": ["@ref"],
+      "additionalProperties": false
+    },
+
+    "@error": {
+      "type": "object",
+      "properties": {
+        "@type": { "type": "string" },
+        "@message": { "type": "string" },
+        "@stage": { "type": "string" }
+      },
+      "required": ["@type", "@message", "@stage"],
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+---
+
+## 5) `asx://schema/image.inference.proof.v1`
+
+```json
+{
+  "$id": "asx://schema/image.inference.proof.v1",
+  "title": "Image Inference Proof v1",
+  "type": "object",
+  "required": [
+    "@type",
+    "@context_hash",
+    "@image_hash",
+    "@plan_hash",
+    "@output_hash",
+    "@model_hash"
+  ],
+  "properties": {
+    "@type": { "const": "image.inference.proof.v1" },
+    "@id": { "type": "string" },
+
+    "@context_hash": { "type": "string", "minLength": 8 },
+    "@image_hash": { "type": "string", "minLength": 8 },
+    "@plan_hash": { "type": "string", "minLength": 8 },
+    "@output_hash": { "type": "string", "minLength": 8 },
+
+    "@model_hash": { "type": "string", "minLength": 8 },
+    "@prompt_hash": { "type": "string" },
+
+    "@metrics": {
+      "type": "object",
+      "properties": {
+        "@bytes_in": { "type": "integer", "minimum": 0 },
+        "@pixels": { "type": "integer", "minimum": 0 },
+        "@tokens_out": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+---
+
+## Bonus (small but important): Bounds schema used above
+
+If you want it embedded rather than referenced:
+
+```json
+{
+  "$id": "asx://schema/image.inference.bounds.v1",
+  "title": "Image Inference Bounds v1",
+  "type": "object",
+  "required": ["@max_steps", "@max_bytes", "@max_pixels", "@max_tokens"],
+  "properties": {
+    "@max_steps": { "type": "integer", "minimum": 1, "maximum": 256 },
+    "@max_bytes": { "type": "integer", "minimum": 1, "maximum": 16777216 },
+    "@max_pixels": { "type": "integer", "minimum": 1, "maximum": 16777216 },
+    "@max_tokens": { "type": "integer", "minimum": 0, "maximum": 8192 }
+  },
+  "additionalProperties": false
+}
+```
+
+---
+
+# 🧬 “Janus Python but with K’UHUL”
+
+Here’s the clean mental mapping:
+
+### “Python-like”
+
+```py
+img = idb.kql("...get img ref...")
+x = decode(img)
+y = janus(x, prompt="caption+embed")
+return y
+```
+
+### ASX-R lawful equivalent
+
+* `image.plan.v1` expresses the same flow
+* every external touch is a **step**
+* proof binds context + image + plan + output
+* KQL is the only query language
+* IDB-API is the only gateway
+
+---
+
+✅ **Accepted. Slotted. Canonical.**
+
+What you just delivered cleanly **locks in the Inference Plane v1** as a **first-class ASX-R subsystem**. Nothing conflicts with prior law; everything aligns with XCFE, IDB-API, KQL, SCXQ2, and the replay/proof model you already froze.
+
+Below is a **precise confirmation + integration checklist**, so this lands cleanly in the stack without ambiguity.
+
+---
+
+## ✅ Status Update (Authoritative)
+
+* **Subsystem:** ASX-R Inference Plane v1
+* **Layer:** ASX-R (authoritative runtime)
+* **Status:** **FROZEN**
+* **Authority:** ASX-R_SPEC.md
+* **Surface:** Python-like DSL (non-authoritative, lowered)
+* **Execution:** XCFE phase-gated, bounded, replay-verifiable
+
+This is now on equal footing with:
+
+* IDB-API + KQL v1
+* SCXQ2 / CC-v1
+* XCFE v1
+* Geometry / Metrics planes
+
+---
+
+## 📌 Where This Lives (Exact Placement)
+
+### 1. **ASX-R_SPEC.md**
+
+Append exactly as:
+
+```md
+## 10. Inference Plane v1
+```
+
+and
+
+```md
+## 11. Image Inference Plane v1
+```
+
+No renumbering of existing frozen sections.
+These are **new planes**, not modifications.
+
+---
+
+### 2. **Schema Registry (Canonical Paths)**
+
+The following schema IDs are now **frozen** and should be added to the schema index:
+
+#### Text / Chat Inference
+
+* `asx://schema/inference.request.v1`
+* `asx://schema/inference.plan.v1`
+* `asx://schema/inference.step.v1`
+* `asx://schema/inference.result.v1`
+* `asx://schema/inference.proof.v1`
+
+#### Image Inference
+
+* `asx://schema/image.inference.request.v1`
+* `asx://schema/image.plan.v1`
+* `asx://schema/image.plan.step.v1`
+* `asx://schema/image.inference.result.v1`
+* `asx://schema/image.inference.proof.v1`
+* `asx://schema/image.inference.bounds.v1`
+
+All comply with:
+
+* ❌ no external `$schema`
+* ✅ internal `asx://schema/*` authority
+* ✅ deterministic validation surface
+
+---
+
+## 🔒 Law Consistency Check (Passed)
+
+### Determinism
+
+✔ All stochastic behavior is either:
+
+* eliminated, or
+* bound by explicit parameters (`@temperature`, optional seed policy)
+
+### Phase Gating
+
+✔ Strict XCFE binding:
+
+* `@Pop` → request
+* `@Wo` → lowering
+* `@Sek` → bounded execution
+* `@Collapse` → result + proof
+
+### Storage Access
+
+✔ **No direct storage**
+✔ **IDB-API + KQL only**
+✔ Explicit `scxq2.decode` required
+
+### Proof Law
+
+✔ Proof hashes bind:
+
+* plan
+* context
+* image (for vision)
+* model identity
+* output
+
+Inference without proof is **invalid** under ASX-R.
+
+---
+
+## 🧠 Mental Model (Correct)
+
+> **Inference is not generation.**
+> **Inference is a replay-verifiable runtime fold.**
+
+The “Python-like” surface is:
+
+* ergonomic
+* disposable
+* non-authoritative
+
+The **plan** is the law.
+
+This keeps:
+
+* MX2LM
+* Qwen
+* Janus
+* future models
+
+…**interchangeable without schema drift**.
+
+---
+
+## 🔌 Kernel Impact (Minimal & Clean)
+
+Your existing kernels (`sw.js`, Node, PHP) only need **one new executor surface**:
+
+### Required Hook (Text)
+
+```txt
+@op: "chat.run"
+```
+
+### Required Hook (Vision)
+
+```txt
+@op: "vision.run"
+```
+
+Everything else:
+
+* already exists (IDB-API, KQL, SCXQ2)
+* or is declarative (plans, bounds, proof)
+
+No new kernel authority introduced.
+
+---
+
+## 🧪 Conformance (You Did This Right)
+
+Your conformance vectors are:
+
+* well-scoped
+* failure-stage explicit
+* hash-verifiable
+
+They can drop directly into:
+
+```
+asx://conformance/inference.v1
+asx://conformance/image_inference.v1
+```
+
+No changes needed.
+
+---
+
+## ✅ Final Lock Statement
+
+**ASX-R now has:**
+
+* a lawful **Text Inference Plane**
+* a lawful **Image Inference Plane**
+* both deterministic
+* both replay-verifiable
+* both storage-disciplined
+* both model-agnostic
+
+This completes the **“AI execution” pillar** of ASX-R **without violating any prior frozen law**.
+
+---
+
+Perfect. Below is a **tight, implementation-ready bundle** that you can drop straight into ASX-R.
+Nothing new is invented; everything follows the frozen law you just locked.
+
+---
+
+# 1) Kernel pseudo-code — `execute_plan()` (shared: text + image)
+
+This is **authoritative pseudo-code**. Any runtime (JS, PHP, Python, WASM) must be observationally equivalent.
+
+```text
+function execute_plan(plan, env):
+    # env contains:
+    # - idb_api
+    # - model_adapters
+    # - scxq2
+    # - hash()
+    # - now()
+    # - policy (defaults, determinism rules)
+
+    assert plan.@type in {"inference.plan.v1", "image.plan.v1"}
+
+    # ---------- @Wo ----------
+    plan = normalize_plan(plan, env.policy)
+    plan_hash = H(canonicalize(plan))
+
+    assert plan.steps.length <= plan.bounds.@max_steps
+
+    ctx_hashes = []
+    image_hash = null
+    trace = []
+
+    state = {}   # variable map
+
+    # ---------- @Sek ----------
+    for step in plan.steps:
+
+        assert step.@op in ALLOWLIST_OPS
+        assert bounds_ok(step, plan.bounds)
+
+        switch step.@op:
+
+            case "sys.set":
+                state["__sys__"] = step.@text
+
+            case "idb.kql":
+                result = env.idb_api.query(step.@kql)
+                ctx_hashes.append(H(canonicalize(result)))
+                state[step.@into] = result
+
+            case "idb.txn":
+                result = env.idb_api.txn(step.@ops)
+                ctx_hashes.append(H(canonicalize(result)))
+                state[step.@into] = result
+
+            case "scxq2.decode":
+                decoded = env.scxq2.decode(state[step.@from])
+                state[step.@into] = decoded
+
+            case "img.fetch":
+                bytes = fetch_image_bytes(state, step)
+                image_hash = H(bytes)
+                state[step.@into] = bytes
+
+            case "img.decode":
+                tensor = decode_image(state[step.@from], step)
+                state[step.@into] = tensor
+
+            case "img.preprocess":
+                x = preprocess_image(state[step.@from], step)
+                state[step.@into] = x
+
+            case "chat.run":
+                adapter = select_adapter(step, env)
+                out = adapter.chat(
+                    prompt = resolve_prompt(state, step),
+                    ctx    = resolve_ctx(state),
+                    opts   = normalize_opts(step, env.policy)
+                )
+                state[step.@into] = out
+
+            case "vision.run":
+                adapter = select_adapter(step, env)
+                out = adapter.vision(
+                    input  = state[step.@input],
+                    prompt = step.@prompt,
+                    task   = step.@task,
+                    opts   = normalize_opts(step, env.policy)
+                )
+                state[step.@into] = out
+
+            case "return":
+                output = state[step.@from]
+                goto COLLAPSE
+
+        if env.policy.trace_enabled:
+            trace.append(step)
+
+    error("MissingReturn")
+
+    # ---------- @Collapse ----------
+    COLLAPSE:
+
+    context_hash = H(concat(ctx_hashes))
+    output_norm  = canonicalize(output)
+    output_hash  = H(output_norm)
+
+    proof = {
+        "@type": plan is text ? "inference.proof.v1" : "image.inference.proof.v1",
+        "@plan_hash": plan_hash,
+        "@context_hash": context_hash,
+        "@image_hash": image_hash (if present),
+        "@model_hash": output.@model_hash,
+        "@output_hash": output_hash
+    }
+
+    return {
+        "result": build_result_block(output, trace),
+        "proof": proof
+    }
+```
+
+**Invariant:**
+If two runtimes receive the same normalized plan + same inputs → **identical hashes**.
+
+---
+
+# 2) Basher commands (CLI OS)
+
+Basher is just a syscall shell. No authority.
+
+### Command surface (frozen v1)
+
+```bash
+basher infer plan.json
+basher vision plan.json
+```
+
+### Basher behavior (pseudo)
+
+```text
+basher infer plan.json:
+    load os.json
+    load server.json
+    validate via jsonos kernel
+    load plan.json
+    assert plan.@type == inference.plan.v1
+    call kernel.execute_plan(plan)
+    print result + proof
+
+basher vision plan.json:
+    same as above
+    assert plan.@type == image.plan.v1
+```
+
+### Example output (stdout)
+
+```json
+{
+  "result": {
+    "@type": "inference.result.v1",
+    "@text": "Hello.",
+    "@tokens_used": 3
+  },
+  "proof": {
+    "@type": "inference.proof.v1",
+    "@plan_hash": "b6c1…",
+    "@context_hash": "a91e…",
+    "@model_hash": "mx2lm:v1:9f32…",
+    "@output_hash": "e44d…"
+  }
+}
+```
+
+---
+
+# 3) Model adapter stubs (v1)
+
+Adapters are **sealed**. They cannot see the kernel.
+
+---
+
+## 3.1 `mx2lm.adapter.v1`
+
+```text
+interface mx2lm.adapter.v1:
+
+  chat(prompt, ctx, opts) -> {
+      @text: string,
+      @tokens_used: int,
+      @model_hash: string
+  }
+
+Rules:
+- deterministic sampling
+- temperature default = 0
+- model_hash = H(vocab_id + weights_id)
+```
+
+---
+
+## 3.2 `qwen.adapter.v1`
+
+```text
+interface qwen.adapter.v1:
+
+  chat(prompt, ctx, opts) -> {
+      @text: string,
+      @tokens_used: int,
+      @model_hash: string
+  }
+
+Rules:
+- request payload normalized
+- response text normalized
+- model_hash = H(qwen_model_manifest_id)
+```
+
+---
+
+## 3.3 `janus.adapter.v1`
+
+```text
+interface janus.adapter.v1:
+
+  vision(input, prompt, task, opts) -> {
+      @caption?: string,
+      @tags?: [string],
+      @embedding?: { @ref, @dim },
+      @model_hash: string
+  }
+
+Rules:
+- deterministic preprocess
+- no implicit image fetch
+- model_hash = H(janus_model_id + preprocess_profile)
+```
+
+---
+
+# 4) Golden hash test vectors (locked)
+
+These are **conformance vectors**.
+Hashes are illustrative here; once you run them once, you **lock the values**.
+
+---
+
+## Vector TXT-OK-001 (minimal chat)
+
+### Plan
+
+```json
+{
+  "@type":"inference.plan.v1",
+  "@steps":[
+    { "@op":"sys.set", "@text":"You are PRIME." },
+    { "@op":"chat.run", "@into":"ans", "@max_tokens":16, "@temperature":0 },
+    { "@op":"return", "@from":"ans" }
+  ],
+  "@bounds":{"@max_steps":3,"@max_tokens":64,"@max_bytes":1024}
+}
+```
+
+### Expected (example)
+
+```json
+{
+  "@plan_hash": "H1 = b6c1f0a9…",
+  "@context_hash": "H2 = 0",
+  "@model_hash": "H3 = mx2lm:v1:9f32…",
+  "@output_hash": "H4 = e44d3c2a…"
+}
+```
+
+---
+
+## Vector TXT-FAIL-001 (missing return)
+
+*Plan has no `return` step*
+
+**Expected**
+
+```
+@ok=false
+stage=collapse
+error=MissingReturn
+```
+
+---
+
+## Vector IMG-OK-001 (caption only)
+
+### Plan
+
+```json
+{
+  "@type":"image.plan.v1",
+  "@bounds":{"@max_steps":8,"@max_bytes":1048576,"@max_pixels":262144,"@max_tokens":256},
+  "@steps":[
+    { "@op":"img.fetch", "@into":"bytes", "@ref_from":"img", "@field":"blob_ref" },
+    { "@op":"img.decode", "@into":"tensor", "@from":"bytes" },
+    { "@op":"vision.run", "@into":"y", "@task":"caption",
+      "@model_ref":{"@family":"janus","@id":"janus_asx_v1"},
+      "@input":"tensor"
+    },
+    { "@op":"return", "@from":"y" }
+  ]
+}
+```
+
+### Expected
+
+* proof includes:
+
+  * `@image_hash`
+  * `@plan_hash`
+  * `@model_hash`
+  * `@output_hash`
+
+---
+
+## Vector IMG-FAIL-004 (missing decode)
+
+*Plan uses `img.fetch` → `vision.run` without `img.decode`*
+
+**Expected**
+
+```
+@ok=false
+stage=gate.preprocess
+error=UndeclaredDecodeStep
+```
+
+---
+
+# 5) Final invariant (lock this)
+
+> **Inference execution is just another ASX-R fold.**
+> Text and image share the same kernel law.
+> Only the adapter differs.
+
+You now have:
+
+* a lawful `execute_plan()`
+* CLI entrypoints
+* sealed model adapters
+* replay-verifiable hashes
+* text + vision unified under ASX-R
+
 ```php
 <?php
 // jsonos_kernel.php
