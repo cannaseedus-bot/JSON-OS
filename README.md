@@ -1,5 +1,558 @@
 # JSON-OS
 
+```php
+<?php
+// jsonos_kernel.php
+// =======================================================
+// JSON-OS Kernel (PHP Host Adapter)
+// Artifact: jsonos_kernel.php
+// Status: DRAFT → intended for FROZEN v1 once stable
+// Authority: os.json (lexicon) ONLY
+// Role: validate os.json + server.json and expose a tiny start() entrypoint
+// =======================================================
+
+function jsonos_die(string $msg): void {
+  http_response_code(400);
+  header('Content-Type: text/plain; charset=utf-8');
+  echo "jsonos: {$msg}\n";
+  exit;
+}
+
+function jsonos_read_json_file(string $path): array {
+  if (!is_file($path)) jsonos_die("missing file: {$path}");
+  $raw = file_get_contents($path);
+  $j = json_decode($raw, true);
+  if (!is_array($j)) jsonos_die("invalid json: {$path}");
+  return $j;
+}
+
+function jsonos_scan_string($v): string {
+  if (is_string($v)) return $v;
+  return json_encode($v, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * Validate server instance against lexicon law (os.json).
+ * This is the PHP mirror of the tiny Node kernel:
+ * - os.json must be FROZEN and define @entities.server
+ * - server.json must contain only allowed shapes
+ * - forbidden tokens must not appear anywhere
+ * - routes must be /no-spaces
+ * - @exec must be exactly one allowed exec class
+ */
+function jsonos_validate(array $os, array $srv): array {
+  $L = $os['@entities']['server'] ?? null;
+  if (!is_array($L)) return ['ok' => false, 'error' => 'os.json missing @entities.server'];
+
+  if (($os['@status'] ?? null) !== 'FROZEN') {
+    return ['ok' => false, 'error' => 'os.json must be FROZEN'];
+  }
+
+  $allowedTop = $L['allowed_top_keys'] ?? ['@server'];
+  $forbidden = $L['forbidden_anywhere'] ?? [];
+  $execClasses = $os['@execution_classes'] ?? [];
+
+  // Forbidden token scan (string containment)
+  $hay = jsonos_scan_string($srv);
+  foreach ($forbidden as $tok) {
+    if (is_string($tok) && $tok !== '' && strpos($hay, $tok) !== false) {
+      return ['ok' => false, 'error' => "server.json contains forbidden token: {$tok}"];
+    }
+  }
+
+  // Top-level keys must be allowed
+  foreach ($srv as $k => $_) {
+    if (!in_array($k, $allowedTop, true)) {
+      return ['ok' => false, 'error' => "top-level key not allowed by lexicon: {$k}"];
+    }
+  }
+
+  if (!isset($srv['@server']) || !is_array($srv['@server'])) {
+    return ['ok' => false, 'error' => 'missing @server'];
+  }
+
+  $S = $srv['@server'];
+  if (!isset($S['@routes']) || !is_array($S['@routes'])) {
+    return ['ok' => false, 'error' => 'missing @server.@routes'];
+  }
+
+  $routes = $S['@routes'];
+  foreach ($routes as $route => $spec) {
+    if (!is_string($route) || $route === '' || $route[0] !== '/' || preg_match('/\s/', $route)) {
+      return ['ok' => false, 'error' => "bad route key: {$route}"];
+    }
+    if (!is_array($spec) || !isset($spec['@exec']) || !is_array($spec['@exec'])) {
+      return ['ok' => false, 'error' => "route missing @exec: {$route}"];
+    }
+
+    $ek = array_keys($spec['@exec']);
+    if (count($ek) !== 1) {
+      return ['ok' => false, 'error' => "@exec must have exactly one class: {$route}"];
+    }
+
+    $klass = $ek[0];
+    if (!isset($execClasses[$klass])) {
+      return ['ok' => false, 'error' => "exec class not allowed by os.json: {$klass} ({$route})"];
+    }
+
+    // Minimal shape checks for @gas / @http (optional but useful)
+    $val = $spec['@exec'][$klass];
+    if ($klass === '@gas') {
+      if (!is_array($val) || count($val) < 1) {
+        return ['ok' => false, 'error' => "@gas must be array<string> with at least 1 entry: {$route}"];
+      }
+      foreach ($val as $i => $name) {
+        if (!is_string($name) || $name === '') {
+          return ['ok' => false, 'error' => "@gas entry must be non-empty string at index {$i}: {$route}"];
+        }
+      }
+    }
+    if ($klass === '@http') {
+      $ok = is_string($val) && $val !== '';
+      $ok = $ok || (is_array($val) && isset($val['url']) && is_string($val['url']) && $val['url'] !== '');
+      if (!$ok) {
+        return ['ok' => false, 'error' => "@http must be url string or {url,...}: {$route}"];
+      }
+    }
+  }
+
+  return ['ok' => true, 'routes' => array_keys($routes)];
+}
+
+/**
+ * Start the kernel in "hosted mode".
+ * For PHP this typically means:
+ * - validate
+ * - return the verified route table (for CLI / cloud CLI / PWA bootstrap)
+ *
+ * Execution dispatch is intentionally NOT implemented here:
+ * this file enforces law; dispatch lives in adapters.
+ */
+function jsonos_start(array $os, array $srv): array {
+  $v = jsonos_validate($os, $srv);
+  if (!$v['ok']) return $v;
+
+  $serverId = $srv['@id'] ?? 'server.json';
+  $osId = $os['@id'] ?? 'os.json';
+
+  return [
+    'ok' => true,
+    'kernel' => 'jsonos_kernel.php',
+    'os' => $osId,
+    'server' => $serverId,
+    'routes' => $v['routes'],
+    'route_count' => count($v['routes']),
+    'status' => 'LEXICON_VERIFIED'
+  ];
+}
+```
+
+If you want the matching **cloud CLI entry** next, drop this next to it as `cli.php` and it will return a verified route table as JSON:
+
+```php
+<?php
+require __DIR__ . '/jsonos_kernel.php';
+
+$osPath = $_GET['os'] ?? __DIR__ . '/os.json';
+$serverPath = $_GET['server'] ?? __DIR__ . '/server.json';
+
+$os = jsonos_read_json_file($osPath);
+$srv = jsonos_read_json_file($serverPath);
+
+$res = jsonos_start($os, $srv);
+
+header('Content-Type: application/json; charset=utf-8');
+echo json_encode($res, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+```
+
+
+---
+
+# 📜 THE JSON-OS FULL SPEC.md
+
+**Status:** Draft → Intended to be frozen as v1
+**Scope:** Normative
+**Audience:** Runtime authors, kernel implementers, CLI hosts, mesh operators
+
+---
+
+## 1. Purpose
+
+JSON-OS defines a **law-first operating model** where:
+
+* JSON defines **what exists**
+* Runtimes merely **host and enforce**
+* Execution is **declared, routed, and sandboxed**
+* Authority is **never implicit**
+
+JSON-OS is not an application framework, server framework, or language runtime.
+
+It is a **lexicon-governed operating contract**.
+
+---
+
+## 2. Core Axioms (Non-Negotiable)
+
+1. **Law precedes execution**
+2. **No file grants authority by existing**
+3. **All execution is declared**
+4. **All routing is explicit**
+5. **Runtimes are replaceable**
+6. **Users are nodes, not clients**
+7. **Structure is illegal unless allowed by the lexicon**
+
+---
+
+## 3. Canonical Node Composition
+
+A JSON-OS node consists of exactly:
+
+```
+index.html     → Projection / IO surface
+sw.js          → Kernel / Router / Policy enforcement
+manifest.json  → Identity / Capabilities / Law bindings
+```
+
+Optional but common:
+
+```
+os.json        → Lexicon / Law definition
+server.json    → Declared capability surface
+```
+
+---
+
+## 4. File Roles (Authoritative)
+
+### 4.1 manifest.json
+
+Defines:
+
+* Node identity
+* Capabilities
+* Allowed interactions
+* Network posture
+
+Does **not** execute code.
+
+---
+
+### 4.2 sw.js
+
+Acts as:
+
+* Kernel
+* Router
+* Policy gate
+* Offline executor
+
+Responsibilities:
+
+* Intercept IO
+* Enforce lexicon rules
+* Route declared requests
+* Never invent authority
+
+---
+
+### 4.3 index.html
+
+Acts as:
+
+* UI
+* Terminal
+* Visualization layer
+
+Has **zero authority**.
+
+---
+
+### 4.4 os.json (Lexicon)
+
+Defines:
+
+* What entities exist (e.g. “server”)
+* What keys are legal
+* What execution classes exist
+* What is forbidden globally
+
+It defines **reality**, not behavior.
+
+Once frozen, it must not change without version bump.
+
+---
+
+### 4.5 server.json
+
+Declares:
+
+* Routes
+* Execution class bindings
+* Metadata
+
+It does **not**:
+
+* Listen on ports
+* Execute code
+* Grant power
+
+It is a **capability declaration**, validated against `os.json`.
+
+---
+
+## 5. Execution Model
+
+Execution is **never local by default**.
+
+Execution happens via **declared classes**, such as:
+
+* `@gas` → Google Apps Script (remote, sandboxed)
+* `@http` → HTTP endpoints (remote, sandboxed)
+
+Execution classes:
+
+* Are defined by the lexicon
+* Are non-sovereign
+* Cannot exceed declared scope
+
+---
+
+## 6. XCFE (Execution Routing)
+
+XCFE is a **declarative routing graph**, not a language runtime.
+
+XCFE:
+
+* Cannot spawn processes
+* Cannot access filesystem
+* Cannot mutate law
+* Cannot elevate privileges
+
+XCFE only:
+
+* Routes intent
+* Transforms data
+* Calls allowed execution classes
+
+---
+
+## 7. CLI Model (Basher / jsonos)
+
+The CLI is **not the OS**.
+
+The CLI:
+
+* Loads `os.json`
+* Loads `server.json`
+* Invokes the kernel
+* Acts as a syscall interface
+
+CLI authority is **zero**.
+
+---
+
+## 8. Cloud Hosting Model (PHP)
+
+PHP is treated as:
+
+* A static host
+* A cloud CLI adapter
+* A transport layer
+
+PHP is **not** a backend authority.
+
+The OS remains fully valid without PHP.
+
+---
+
+## 9. Mesh Network Model
+
+Each user node:
+
+* Enforces its own law
+* Calls remote execution (GAS / HTTP)
+* Can later relay to other nodes
+
+There is **no central server**.
+
+---
+
+## 10. Security Model
+
+* No implicit execution
+* No dynamic imports
+* No eval
+* No filesystem
+* No sockets unless lexicon-allowed
+* All routes must be declared
+* All execution must be sandboxed
+
+---
+
+## 11. Versioning
+
+* Lexicon changes require **major version**
+* New execution classes require **minor version**
+* Clarifications require **patch version**
+
+---
+
+## 12. Definition Lock
+
+Once frozen:
+
+* The lexicon is immutable
+* server.json must conform or fail
+* Runtimes may change freely
+
+---
+
+# 📘 README.md
+
+## JSON-OS
+
+**JSON-OS is a law-driven, browser-native operating model.**
+
+It turns:
+
+* Browsers into nodes
+* JSON into law
+* Service Workers into kernels
+* Remote execution into mesh calls
+
+No servers to run.
+No daemons to install.
+No trust inversion.
+
+---
+
+## What You Get
+
+Each user receives:
+
+* `index.html`
+* `sw.js`
+* `manifest.json`
+
+They instantly become a **mesh node**.
+
+---
+
+## What JSON-OS Is Not
+
+* ❌ Not a web framework
+* ❌ Not a backend
+* ❌ Not a JS runtime
+* ❌ Not a blockchain
+* ❌ Not a server replacement
+
+---
+
+## Core Concepts
+
+| Concept    | Meaning                   |
+| ---------- | ------------------------- |
+| Law        | Defined in `os.json`      |
+| Capability | Declared in `server.json` |
+| Kernel     | Implemented in `sw.js`    |
+| Execution  | Remote + sandboxed        |
+| CLI        | Interface only            |
+| Mesh       | Emergent, not centralized |
+
+---
+
+## Quick Start (Cloud)
+
+```bash
+npx jsonos start https://yourdomain.com/server.json
+```
+
+---
+
+## Philosophy
+
+> Reality is declared.
+> Authority is explicit.
+> Execution is replaceable.
+
+---
+
+# 🗺️ PLAN.md
+
+## Phase 0 — Specification (NOW)
+
+* [x] JSON-OS core concepts
+* [x] Lexicon-first model
+* [x] Server declaration model
+* [x] Kernel responsibility defined
+* [ ] Freeze `jsonos.lexicon.v1`
+
+---
+
+## Phase 1 — Minimal Runtime
+
+* [ ] Finalize `jsonos.lexicon.v1`
+* [ ] Finalize `server.json.schema.v1`
+* [ ] Implement 20-line kernel (Node)
+* [ ] Implement PHP cloud CLI adapter
+* [ ] Implement Basher CLI shell
+
+---
+
+## Phase 2 — PWA Node
+
+* [ ] Canonical `sw.js` kernel
+* [ ] Route interception via manifest
+* [ ] GAS execution adapter
+* [ ] Offline-first routing
+* [ ] Node identity binding
+
+---
+
+## Phase 3 — Mesh Expansion
+
+* [ ] Node discovery via GAS relay
+* [ ] Capability exchange
+* [ ] Route federation
+* [ ] Cross-node calls
+
+---
+
+## Phase 4 — Hardening
+
+* [ ] Signature verification
+* [ ] Capability proofs
+* [ ] Replay logs
+* [ ] Deterministic hashing
+
+---
+
+## Phase 5 — Tooling
+
+* [ ] Basher REPL
+* [ ] `jsonos call`
+* [ ] Inspector / tracer
+* [ ] Visualization UI
+
+---
+
+## Phase 6 — Optional Rigs
+
+* [ ] Local execution host
+* [ ] WASM kernel
+* [ ] Dedicated mesh relays
+
+(No schema changes allowed.)
+
+---
+
+## Final Rule
+
+> If it can be removed without changing JSON,
+> it is not part of the OS.
+
+---
+
 Below is a **frozen** `jsonos.lexicon.v1`, a **formal** `server.json.schema.v1`, and a **real npm CLI** that runs:
 
 Yes — and the way you just framed it is **exactly** the right pragmatic move.
