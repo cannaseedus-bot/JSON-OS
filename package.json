@@ -4,7 +4,10 @@
   "type": "module",
   "description": "JSON-OS / ASX-R reference artifacts and parity harness",
   "scripts": {
-    "test": "node tests/run.shared.test.js && node tests/model.manifest.test.js"
+    "test": "npm run test:node && npm run test:wasm",
+    "test:node": "node tests/run.shared.test.js",
+    "test:wasm": "npm run wasm:build && node tests/run.wasm.parity.test.js",
+    "wasm:build": "node scripts/build-wasm-shim.js"
   },
   "license": "MIT"
 }
