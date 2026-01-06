@@ -39,7 +39,9 @@ function loadJSON(rel) {
 
 function assertEqual(actual, expected, label) {
   if (actual !== expected) {
-    throw new Error(`${label} mismatch\n  expected: ${expected}\n  actual:   ${actual}`);
+    throw new Error(
+      `${label} mismatch\n  expected: ${expected}\n  actual:   ${actual}`
+    );
   }
 }
 
@@ -64,7 +66,11 @@ function runFixture(fx) {
 
   // ---- RAW vs PACKED EQUALITY ----
   for (const k of keys) {
-    assertEqual(rawOut.proof[k], packedOut.proof[k], `RAW vs PACKED ${fx.name} ${k}`);
+    assertEqual(
+      rawOut.proof[k],
+      packedOut.proof[k],
+      `RAW vs PACKED ${fx.name} ${k}`
+    );
   }
 
   console.log(`[PASS] ${fx.name} (raw + packed parity)`);

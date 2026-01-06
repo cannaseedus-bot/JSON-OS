@@ -46,7 +46,11 @@ function decodeScxq2Blob(payload) {
   // Format: "⟁SCXQ2⟁BLOB⟁" + base64url(no padding) of canonical JSON bytes
   const prefix = "⟁SCXQ2⟁BLOB⟁";
   if (typeof payload !== "string" || !payload.startsWith(prefix)) {
-    throw asxError("InvalidSCXQ2Payload", "gate.decode", "Invalid SCXQ2 blob payload");
+    throw asxError(
+      "InvalidSCXQ2Payload",
+      "gate.decode",
+      "Invalid SCXQ2 blob payload"
+    );
   }
   const b64url = payload.slice(prefix.length);
   const pad = "=".repeat((4 - (b64url.length % 4)) % 4);
@@ -59,7 +63,11 @@ export function decode_plan_if_packed(planOrPack) {
   if (planOrPack["@type"] !== "scxq2.plan.pack.v1") return planOrPack;
 
   if (planOrPack["@encoding"] !== "scxq2.blob.v1") {
-    throw asxError("UnsupportedPackEncoding", "gate.decode", "Unsupported SCXQ2 pack encoding");
+    throw asxError(
+      "UnsupportedPackEncoding",
+      "gate.decode",
+      "Unsupported SCXQ2 pack encoding"
+    );
   }
 
   const jsonText = decodeScxq2Blob(planOrPack["@payload_scxq2"]);
@@ -69,7 +77,11 @@ export function decode_plan_if_packed(planOrPack) {
   if (planOrPack["@plan_hash"]) {
     const ph = canonHash(plan);
     if (ph !== planOrPack["@plan_hash"]) {
-      throw asxError("PlanHashMismatch", "gate.decode", "Packed plan hash mismatch");
+      throw asxError(
+        "PlanHashMismatch",
+        "gate.decode",
+        "Packed plan hash mismatch"
+      );
     }
   }
 
@@ -97,10 +109,12 @@ function normalizePlan(plan) {
     throw asxError("MissingBounds", "normalize", "Plan missing @bounds");
   }
   const steps = plan["@steps"];
-  if (!Array.isArray(steps)) throw asxError("InvalidSteps", "normalize", "@steps must be array");
+  if (!Array.isArray(steps))
+    throw asxError("InvalidSteps", "normalize", "@steps must be array");
 
   for (const s of steps) {
-    if (s["@op"] === "chat.run" && s["@temperature"] === undefined) s["@temperature"] = 0.0;
+    if (s["@op"] === "chat.run" && s["@temperature"] === undefined)
+      s["@temperature"] = 0.0;
   }
   return plan;
 }
@@ -131,7 +145,9 @@ function defaultIdb() {
     kql: (kqlText) => ({
       "@type": "idb.query.result.v1",
       "@ok": true,
-      "@rows": [{ id: "img_001", blob_ref: "idb://blob/img_001", mime: "image/png" }],
+      "@rows": [
+        { id: "img_001", blob_ref: "idb://blob/img_001", mime: "image/png" },
+      ],
     }),
   };
 }
@@ -140,7 +156,12 @@ export function execute_plan(planOrPack, env = {}) {
   const plan = normalizePlan(decode_plan_if_packed(planOrPack));
   const planType = plan["@type"];
   if (planType !== "inference.plan.v1" && planType !== "image.plan.v1") {
-    throw asxError("InvalidPlanType", "gate.plan", "Unsupported plan @type", { "@type": planType });
+    throw asxError(
+      "InvalidPlanType",
+      "gate.plan",
+      "Unsupported plan @type",
+      { "@type": planType }
+    );
   }
 
   const bounds = plan["@bounds"];
@@ -164,9 +185,14 @@ export function execute_plan(planOrPack, env = {}) {
   for (const step of steps) {
     const op = step["@op"];
     if (!ALLOWLIST.has(op)) {
-      throw asxError("DisallowedStepOp", "gate.op_allowlist", "Step op not in allowlist", {
-        "@op": op,
-      });
+      throw asxError(
+        "DisallowedStepOp",
+        "gate.op_allowlist",
+        "Step op not in allowlist",
+        {
+          "@op": op,
+        }
+      );
     }
 
     switch (op) {
@@ -188,14 +214,19 @@ export function execute_plan(planOrPack, env = {}) {
       case "scxq2.decode":
         // v1 reference: decode is a no-op unless user supplies env.scxq2
         if (!env.scxq2 || typeof env.scxq2.decode !== "function") {
-          throw asxError("MissingSCXQ2Decoder", "gate.decode", "scxq2.decode requested but no decoder provided");
+          throw asxError(
+            "MissingSCXQ2Decoder",
+            "gate.decode",
+            "scxq2.decode requested but no decoder provided"
+          );
         }
         state[step["@into"]] = env.scxq2.decode(state[step["@from"]]);
         break;
 
       case "img.fetch": {
         // Deterministic bytes source (golden):
-        const bytes = env.image_bytes || Buffer.from("img_001_png_bytes_v1", "utf8");
+        const bytes =
+          env.image_bytes || Buffer.from("img_001_png_bytes_v1", "utf8");
         state[step["@into"]] = bytes;
         image_hash = sha256Hex(bytes);
         break;
@@ -251,18 +282,18 @@ export function execute_plan(planOrPack, env = {}) {
     planType === "inference.plan.v1"
       ? {
           "@type": "inference.proof.v1",
-          "plan_hash": plan_hash,
-          "context_hash": context_hash,
-          "model_hash": output["@model_hash"],
-          "output_hash": output_hash,
+          plan_hash: plan_hash,
+          context_hash: context_hash,
+          model_hash: output["@model_hash"],
+          output_hash: output_hash,
         }
       : {
           "@type": "image.inference.proof.v1",
-          "plan_hash": plan_hash,
-          "context_hash": context_hash,
-          "image_hash": image_hash,
-          "model_hash": output["@model_hash"],
-          "output_hash": output_hash,
+          plan_hash: plan_hash,
+          context_hash: context_hash,
+          image_hash: image_hash,
+          model_hash: output["@model_hash"],
+          output_hash: output_hash,
         };
 
   return { result: output, proof };

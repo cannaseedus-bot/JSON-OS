@@ -1,0 +1,9 @@
+{
+  "@brand": {
+    "@name": "JSON-OS / ASX-R",
+    "@symbol": "⚛",
+    "@logo": "/assets/jsonos-splash.svg",
+    "@theme_color": "#00ffcc",
+    "@background_color": "#0b0f14"
+  }
+}
