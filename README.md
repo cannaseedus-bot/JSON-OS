@@ -3,6 +3,13 @@
 Below are **locked, golden artifacts** you can drop straight into the repo and conformance suite.
 They are **authoritative**: fixtures, hashes, transcripts, and a **single shared test harness** that proves **Basher ⇄ Service Worker parity**.
 
+## Project Phases
+
+1. **Golden Plan Fixtures** — Maintain canonical hello/caption plans with deterministic bounds, hashes, and SCXQ2-packed equivalents.
+2. **Reference Kernel & CI Parity** — Keep `kernel/execute_plan.js` and the shared harness in sync across environments, ensuring Basher ⇄ PWA proof parity.
+3. **Basher / PWA Integration** — Align Basher CLI commands and PWA assets so they delegate to the same law-first kernel and declared routes.
+4. **Mesh & Cloud CLI Expansion (Planned)** — Add cloud CLI adapters and node-to-node capability exchange while preserving lexicon enforcement.
+
 ---
 
 # 1) Golden Plan Fixtures **+ Exact Hashes** (v1)
