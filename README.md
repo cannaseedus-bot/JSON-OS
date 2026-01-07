@@ -3185,6 +3185,11 @@ function doPost(e) {
 }
 ```
 
+> The repository now includes real GAS sources under `./gas/`. Drop the files
+> into a single Apps Script project and follow `gas/README.md` for deployment
+> details (web app URL, optional API key, and how to reference it from
+> `server.json`).
+
 ```json
 // ui/capability.prompt.v1.schema.json
 {
@@ -9669,6 +9674,21 @@ npx jsonos start server.json
   }
 }
 ```
+
+---
+
+### GAS sources (Apps Script)
+
+The `gas/` directory now contains the `.gs` files referenced in the sample
+`@gas` routes. To deploy:
+
+1. Create a new Google Apps Script project.
+2. Add the four files from `gas/` (`tool_exec.gs`, `infer.gs`, `weights.gs`,
+   `compress.gs`) with the same names.
+3. Deploy the project as a Web App and copy the execution URL as your
+   `execUrl` for the GAS adapter (include your `x-asx-key` header if needed).
+
+See `gas/README.md` for a step-by-step guide.
 
 ---
 
