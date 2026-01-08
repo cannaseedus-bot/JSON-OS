@@ -1,0 +1,194 @@
+{
+  "$schema": "xjson://schema/core/v1",
+  "$id": "kuhul://schema/event/v1",
+  "@type": "xjson.schema",
+  "@status": "frozen",
+  "title": "KUHUL Event Schema v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["@type", "@v", "id", "ts_ms", "topic", "data"],
+  "properties": {
+    "@type": { "const": "kuhul.event" },
+    "@v": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "id": { "type": "string", "minLength": 8, "maxLength": 64 },
+    "ts_ms": { "type": "integer", "minimum": 0 },
+    "caused_by": { "type": "string" },
+    "topic": { "type": "string", "minLength": 3, "maxLength": 128 },
+    "data": { "type": "object" }
+  },
+  "oneOf": [
+    {
+      "required": ["topic", "data"],
+      "properties": {
+        "topic": { "const": "state.changed" },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": { "enum": ["component.created", "theme.changed"] },
+            "component": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "type", "props"],
+              "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "type": { "enum": ["button", "card", "chat-bubble"] },
+                "props": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "text": { "type": "string" },
+                    "label": { "type": "string" }
+                  }
+                }
+              }
+            },
+            "from": { "enum": ["dark", "light"] },
+            "to": { "enum": ["dark", "light"] }
+          },
+          "oneOf": [
+            {
+              "required": ["kind", "component"],
+              "properties": { "kind": { "const": "component.created" } }
+            },
+            {
+              "required": ["kind", "from", "to"],
+              "properties": { "kind": { "const": "theme.changed" } }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "required": ["topic", "data"],
+      "properties": {
+        "topic": { "const": "state.snapshot" },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state"],
+          "properties": {
+            "state": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["theme", "components", "epoch_ms", "phase"],
+              "properties": {
+                "theme": { "enum": ["dark", "light"] },
+                "epoch_ms": { "type": "integer", "minimum": 0 },
+                "phase": { "enum": ["accepting", "applying"] },
+                "components": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "type", "props"],
+                    "properties": {
+                      "id": { "type": "string", "minLength": 1 },
+                      "type": { "enum": ["button", "card", "chat-bubble"] },
+                      "props": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "text": { "type": "string" },
+                          "label": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "required": ["topic", "data"],
+      "properties": {
+        "topic": { "const": "svg.export.requested" },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["format", "hint"],
+          "properties": {
+            "format": { "const": "svg" },
+            "hint": { "type": "string" }
+          }
+        }
+      }
+    },
+    {
+      "required": ["topic", "data"],
+      "properties": {
+        "topic": { "const": "shell.intent.received" },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["intent", "shell"],
+          "properties": {
+            "intent": { "type": "string" },
+            "shell": { "enum": ["bash", "dom", "quake", "sql", "kuhul"] }
+          }
+        }
+      }
+    },
+    {
+      "required": ["topic", "data"],
+      "properties": {
+        "topic": { "const": "command.rejected" },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reason"],
+          "properties": {
+            "reason": {
+              "enum": [
+                "time_regression",
+                "invalid_phase",
+                "phase_not_accepting",
+                "unknown_op",
+                "invalid_component",
+                "props_not_object",
+                "props_undeclared",
+                "prop_value_not_string",
+                "invalid_theme",
+                "missing_intent",
+                "missing_shell"
+              ]
+            },
+            "phase": { "type": "string" },
+            "op": { "type": "string" },
+            "keys": { "type": "array", "items": { "type": "string" } },
+            "key": { "type": "string" }
+          },
+          "oneOf": [
+            { "required": ["reason"], "properties": { "reason": { "const": "time_regression" } } },
+            { "required": ["reason"], "properties": { "reason": { "const": "invalid_phase" } } },
+            {
+              "required": ["reason", "phase"],
+              "properties": { "reason": { "const": "phase_not_accepting" } }
+            },
+            {
+              "required": ["reason", "op"],
+              "properties": { "reason": { "const": "unknown_op" } }
+            },
+            { "required": ["reason"], "properties": { "reason": { "const": "invalid_component" } } },
+            { "required": ["reason"], "properties": { "reason": { "const": "props_not_object" } } },
+            {
+              "required": ["reason", "keys"],
+              "properties": { "reason": { "const": "props_undeclared" } }
+            },
+            {
+              "required": ["reason", "key"],
+              "properties": { "reason": { "const": "prop_value_not_string" } }
+            },
+            { "required": ["reason"], "properties": { "reason": { "const": "invalid_theme" } } },
+            { "required": ["reason"], "properties": { "reason": { "const": "missing_intent" } } },
+            { "required": ["reason"], "properties": { "reason": { "const": "missing_shell" } } }
+          ]
+        }
+      }
+    }
+  ]
+}
