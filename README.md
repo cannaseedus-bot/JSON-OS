@@ -1,8 +1,5 @@
 # JSON-OS
 
-Below are **locked, golden artifacts** you can drop straight into the repo and conformance suite.
-They are **authoritative**: fixtures, hashes, transcripts, and a **single shared test harness** that proves **Basher ⇄ Service Worker parity**.
-
 ## Project Phases
 
 1. **Golden Plan Fixtures** — Maintain canonical hello/caption plans with deterministic bounds, hashes, and SCXQ2-packed equivalents.
