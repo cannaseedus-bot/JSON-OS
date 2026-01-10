@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MeshNet GAS PWA</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .status-bar {
+      background: #e3f2fd;
+      padding: 10px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .peer-id {
+      font-family: monospace;
+      background: #2196f3;
+      color: white;
+      padding: 5px 10px;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    button {
+      padding: 10px;
+      border: none;
+      border-radius: 5px;
+      background: #2196f3;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    button:hover:not(:disabled) {
+      background: #1976d2;
+    }
+    .panels {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 600px) {
+      .panels {
+        grid-template-columns: 1fr;
+      }
+    }
+    .panel {
+      background: #fafafa;
+      padding: 15px;
+      border-radius: 5px;
+      border: 1px solid #e0e0e0;
+    }
+    .panel h3 {
+      margin-top: 0;
+      color: #2196f3;
+    }
+    #peersList, #messages {
+      list-style: none;
+      padding: 0;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    #peersList li, #messages li {
+      padding: 8px;
+      margin-bottom: 5px;
+      background: white;
+      border-radius: 3px;
+      border-left: 4px solid #2196f3;
+    }
+    .connected {
+      border-left-color: #4caf50 !important;
+    }
+    .message-input {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+    input, select {
+      flex: 1;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+    }
+    .notification {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #4caf50;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 5px;
+      animation: slideIn 0.3s;
+    }
+    @keyframes slideIn {
+      from { transform: translateX(100%); }
+      to { transform: translateX(0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🌐 MeshNet PWA (GAS)</h1>
+      <p>Peer-to-Peer using Google Apps Script</p>
+    </div>
+
+    <div class="status-bar">
+      <div>
+        <strong>Status:</strong>
+        <span id="status">Offline</span>
+      </div>
+      <div>
+        <strong>Peer ID:</strong>
+        <span id="peerId" class="peer-id">Not set</span>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button onclick="generatePeerId()">Generate Peer ID</button>
+      <button id="connectBtn" onclick="connectToGAS()" disabled>Connect to Network</button>
+      <button id="refreshBtn" onclick="refreshPeers()" disabled>Refresh Peers</button>
+      <button id="broadcastBtn" onclick="sendBroadcast()" disabled>Broadcast Test</button>
+    </div>
+
+    <div class="panels">
+      <div class="panel">
+        <h3>Connected Peers</h3>
+        <ul id="peersList"></ul>
+        <div style="margin-top: 10px;">
+          <input type="text" id="connectToId" placeholder="Peer ID to connect" style="width: 70%;">
+          <button onclick="connectToPeerManual()">Connect</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Messages</h3>
+        <ul id="messages"></ul>
+        <div class="message-input">
+          <select id="targetPeerSelect">
+            <option value="broadcast">All Peers</option>
+          </select>
+          <input type="text" id="messageText" placeholder="Type message..." disabled>
+          <button id="sendBtn" onclick="sendMessage()" disabled>Send</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: 20px; padding: 15px; background: #e8f5e9; border-radius: 5px;">
+      <h4>GAS Endpoint Configuration:</h4>
+      <input type="text" id="gasUrl" placeholder="https://script.google.com/macros/s/.../exec" style="width: 100%; padding: 8px; margin: 5px 0;">
+      <button onclick="saveGASConfig()">Save GAS URL</button>
+      <p style="font-size: 12px; color: #666; margin-top: 10px;">
+        Deploy the GAS script as Web App with "Anyone" access, then paste the URL here.
+      </p>
+    </div>
+  </div>
+
+  <script>
+    // GAS-compatible PWA - no classes, only functions
+    var peerId = null;
+    var connectedPeers = [];
+    var isConnected = false;
+    var swRegistration = null;
+    var gasEndpoint = localStorage.getItem('gas_endpoint') || '';
+
+    // Initialize
+    window.addEventListener('load', function() {
+      initPWA();
+      loadGASConfig();
+    });
+
+    function initPWA() {
+      // Register Service Worker
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js')
+          .then(function(registration) {
+            swRegistration = registration;
+            console.log('SW registered');
+
+            // Listen for messages from SW
+            navigator.serviceWorker.addEventListener('message', handleSWMessage);
+
+            // Update UI
+            if (peerId) {
+              enableConnectButton();
+            }
+          })
+          .catch(function(error) {
+            console.error('SW registration failed:', error);
+          });
+      }
+
+      // Install prompt
+      setupInstallPrompt();
+    }
+
+    function loadGASConfig() {
+      var savedUrl = localStorage.getItem('gas_endpoint');
+      if (savedUrl) {
+        document.getElementById('gasUrl').value = savedUrl;
+        gasEndpoint = savedUrl;
+      }
+    }
+
+    function saveGASConfig() {
+      var url = document.getElementById('gasUrl').value.trim();
+      if (url && url.includes('script.google.com')) {
+        localStorage.setItem('gas_endpoint', url);
+        gasEndpoint = url;
+        showNotification('GAS URL saved!');
+
+        if (peerId) {
+          enableConnectButton();
+        }
+      } else {
+        alert('Please enter a valid Google Apps Script URL');
+      }
+    }
+
+    function generatePeerId() {
+      peerId = 'peer_' + Math.random().toString(36).substr(2, 9);
+      document.getElementById('peerId').textContent = peerId;
+      enableConnectButton();
+      showNotification('Peer ID generated');
+    }
+
+    function enableConnectButton() {
+      if (peerId && gasEndpoint && swRegistration) {
+        document.getElementById('connectBtn').disabled = false;
+        document.getElementById('status').textContent = 'Ready to connect';
+        document.getElementById('status').style.color = '#2196f3';
+      }
+    }
+
+    function connectToGAS() {
+      if (!peerId || !gasEndpoint || !swRegistration) {
+        return;
+      }
+
+      // Send initialization to Service Worker
+      swRegistration.active.postMessage({
+        type: 'INIT_GAS',
+        endpoint: gasEndpoint,
+        peerId: peerId
+      });
+
+      document.getElementById('status').textContent = 'Connecting...';
+      document.getElementById('status').style.color = '#ff9800';
+      document.getElementById('connectBtn').disabled = true;
+    }
+
+    function refreshPeers() {
+      if (swRegistration && swRegistration.active) {
+        swRegistration.active.postMessage({
+          type: 'GET_PEERS'
+        });
+      }
+    }
+
+    function connectToPeerManual() {
+      var targetId = document.getElementById('connectToId').value.trim();
+      if (targetId && swRegistration && swRegistration.active) {
+        swRegistration.active.postMessage({
+          type: 'CONNECT_TO_PEER',
+          targetPeerId: targetId
+        });
+        document.getElementById('connectToId').value = '';
+      }
+    }
+
+    function sendMessage() {
+      var message = document.getElementById('messageText').value.trim();
+      var target = document.getElementById('targetPeerSelect').value;
+
+      if (!message) {
+        return;
+      }
+
+      if (swRegistration && swRegistration.active) {
+        swRegistration.active.postMessage({
+          type: 'SEND_DATA',
+          peerId: target,
+          payload: {
+            type: 'chat',
+            text: message,
+            timestamp: Date.now(),
+            from: peerId
+          }
+        });
+
+        addMessage('You', message);
+        document.getElementById('messageText').value = '';
+      }
+    }
+
+    function sendBroadcast() {
+      var message = prompt('Enter broadcast message:');
+      if (message && swRegistration && swRegistration.active) {
+        swRegistration.active.postMessage({
+          type: 'SEND_DATA',
+          peerId: 'broadcast',
+          payload: {
+            type: 'broadcast',
+            text: message,
+            timestamp: Date.now(),
+            from: peerId
+          }
+        });
+
+        addMessage('You (broadcast)', message);
+      }
+    }
+
+    function handleSWMessage(event) {
+      var data = event.data;
+      console.log('Message from SW:', data);
+
+      switch (data.type) {
+        case 'GAS_CONNECTED':
+          isConnected = true;
+          document.getElementById('status').textContent = 'Connected';
+          document.getElementById('status').style.color = '#4caf50';
+          document.getElementById('refreshBtn').disabled = false;
+          document.getElementById('broadcastBtn').disabled = false;
+          document.getElementById('sendBtn').disabled = false;
+          document.getElementById('messageText').disabled = false;
+          showNotification('Connected to mesh network!');
+          refreshPeers();
+          break;
+
+        case 'PEER_LIST':
+          updatePeerList(data.peers);
+          break;
+
+        case 'PEER_CONNECTED':
+          addPeerToList(data.peerId);
+          addMessage('System', 'Peer ' + data.peerId + ' connected');
+          break;
+
+        case 'PEER_DISCONNECTED':
+          removePeerFromList(data.peerId);
+          addMessage('System', 'Peer ' + data.peerId + ' disconnected');
+          break;
+
+        case 'PEER_MESSAGE':
+          addMessage(data.from, data.data.text);
+          break;
+
+        case 'MESSAGE_RECEIVED':
+          addMessage(data.from, data.message);
+          break;
+        default:
+          break;
+      }
+    }
+
+    function updatePeerList(peers) {
+      var list = document.getElementById('peersList');
+      var select = document.getElementById('targetPeerSelect');
+
+      // Clear lists
+      list.innerHTML = '';
+      select.innerHTML = '<option value="broadcast">All Peers</option>';
+
+      // Filter out self
+      var otherPeers = peers.filter(function(peer) {
+        return peer !== peerId;
+      });
+
+      // Add to list
+      otherPeers.forEach(function(peer) {
+        // Add to UI list
+        var li = document.createElement('li');
+        li.textContent = peer;
+        li.className = 'connected';
+        list.appendChild(li);
+
+        // Add to select dropdown
+        var option = document.createElement('option');
+        option.value = peer;
+        option.textContent = peer;
+        select.appendChild(option);
+      });
+
+      connectedPeers = otherPeers;
+    }
+
+    function addPeerToList(newPeerId) {
+      if (!connectedPeers.includes(newPeerId) && newPeerId !== peerId) {
+        connectedPeers.push(newPeerId);
+        updatePeerList(connectedPeers);
+      }
+    }
+
+    function removePeerFromList(removingPeerId) {
+      var index = connectedPeers.indexOf(removingPeerId);
+      if (index > -1) {
+        connectedPeers.splice(index, 1);
+        updatePeerList(connectedPeers);
+      }
+    }
+
+    function addMessage(sender, text) {
+      var list = document.getElementById('messages');
+      var li = document.createElement('li');
+
+      var time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      li.innerHTML = '<strong>' + sender + ':</strong> ' + text +
+        '<br><small style="color:#666;">' + time + '</small>';
+
+      list.appendChild(li);
+      list.scrollTop = list.scrollHeight;
+    }
+
+    function showNotification(text) {
+      var notification = document.createElement('div');
+      notification.className = 'notification';
+      notification.textContent = text;
+      document.body.appendChild(notification);
+
+      setTimeout(function() {
+        notification.remove();
+      }, 3000);
+    }
+
+    function setupInstallPrompt() {
+      window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+
+        // Show install button after 5 seconds
+        setTimeout(function() {
+          if (confirm('Install MeshNet PWA for better experience?')) {
+            e.prompt();
+            e.userChoice.then(function(choiceResult) {
+              console.log('User ' + choiceResult.outcome);
+            });
+          }
+        }, 5000);
+      });
+    }
+  </script>
+</body>
+</html>

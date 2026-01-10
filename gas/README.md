@@ -12,11 +12,15 @@ separated for clarity so you can drop them into a single Apps Script project.
   prompt and token count.
 - `weights.gs` — Static descriptor for sample weight metadata.
 - `compress.gs` — Whitespace flattener to keep demo responses deterministic.
+- `meshnet/Code.gs` — Optional GAS mesh signaling backend used by the MeshNet
+  PWA sample.
 
 ## Install & deploy
 
 1. Go to https://script.new (or Apps Script inside a Google Workspace project).
 2. Create a new project and add the four files above, keeping the same names.
+   (Optional) Add `meshnet/Code.gs` if you want the MeshNet PWA sample
+   signaling backend.
 3. Paste the contents from this folder into each matching file in the Apps Script
    editor.
 4. From **Deploy > New deployment**, choose **Web app** and select:
