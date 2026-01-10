@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="360" viewBox="0 0 800 360">
+  <defs>
+    <style>
+      .button { fill: #16f2aa; rx: 10; }
+      .label { font-family: 'Inter', sans-serif; font-size: 18px; fill: #0b0b0b; }
+      .panel { fill: #10131a; rx: 16; }
+      .panel-text { font-family: 'Inter', sans-serif; font-size: 14px; fill: #f4f4f4; }
+    </style>
+  </defs>
+
+  <rect x="24" y="24" width="752" height="312" class="panel" />
+  <text x="48" y="72" class="panel-text">KUHUL Agent Starter</text>
+  <text x="48" y="100" class="panel-text">Run the agent to process PLAN.md tasks.</text>
+
+  <rect x="48" y="140" width="220" height="56" class="button" />
+  <text x="158" y="175" text-anchor="middle" class="label">Run AI Agent</text>
+
+  <rect x="300" y="140" width="440" height="160" fill="#1c2230" rx="12" />
+  <text x="320" y="175" class="panel-text">Output</text>
+  <text x="320" y="205" class="panel-text" id="status">Idle</text>
+
+  <script><![CDATA[
+    const svg = document.querySelector('svg');
+    const status = document.getElementById('status');
+
+    svg.addEventListener('click', async (event) => {
+      const target = event.target;
+      if (!target.closest || !target.closest('rect.button')) {
+        return;
+      }
+
+      status.textContent = 'Running agent...';
+      try {
+        const response = await fetch('ai_agent.php', { method: 'POST' });
+        const text = await response.text();
+        status.textContent = text.trim() || 'Agent completed.';
+      } catch (error) {
+        status.textContent = 'Agent failed. Check server logs.';
+      }
+    });
+  ]]></script>
+</svg>
